@@ -107,11 +107,12 @@ class BreastConfig(Config):
     IMAGE_MIN_SCALE = 0
 
     # Length of square anchor side in pixels
-    RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)
+    #RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)
+    RPN_ANCHOR_SCALES = (32,64,128,256,512)
 
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 1000 
-    POST_NMS_ROIS_INFERENCE = 2000
+    POST_NMS_ROIS_INFERENCE = 1000
 
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
@@ -123,7 +124,7 @@ class BreastConfig(Config):
     # Grayscale images
     # IMAGE_CHANNEL_COUNT = 1
     # Image mean (Grayscale)
-    MEAN_PIXEL = np.array([32768.0, 32768.0, 32768.0])
+    MEAN_PIXEL = np.array([127.5, 127.5, 127.5])
 
     # If enabled, resizes instance masks to a smaller size to reduce
     # memory load. Recommended when using high-resolution images.
@@ -138,10 +139,10 @@ class BreastConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 128
 
     # Maximum number of ground truth instances to use in one image
-    MAX_GT_INSTANCES = 200
+    MAX_GT_INSTANCES = 10
 
     # Max number of final detections per image
-    DETECTION_MAX_INSTANCES = 10
+    DETECTION_MAX_INSTANCES = 7
     LEARNING_RATE = 0.0001
 
 class BreastInferenceConfig(BreastConfig):
@@ -291,8 +292,8 @@ def train(model, dataset_dir, subset):
         iaa.OneOf([iaa.Affine(rotate=90),
                    iaa.Affine(rotate=180),
                    iaa.Affine(rotate=270)]),
-        iaa.Multiply((0.8, 1.5)),
-        iaa.GaussianBlur(sigma=(0.0, 5.0))
+        #iaa.Multiply((0.8, 1.5)),
+        #iaa.GaussianBlur(sigma=(0.0, 5.0))
     ])
 
     # *** This training schedule is an example. Update to your needs ***
@@ -508,9 +509,9 @@ if __name__ == '__main__':
     print("Logs: ", args.logs)
 
     if args.command == "train":
-        CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
+        CSV_DIR = "/backup/home/yuxin/mass_case_description_train_set.csv"
     else:
-        CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+        CSV_DIR = "/backup/home/yuxin/mass_case_description_test_set.csv"
     # Configurations
     if args.command == "train":
        
