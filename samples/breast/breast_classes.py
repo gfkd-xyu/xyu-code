@@ -450,17 +450,17 @@ def evaluate(model, dataset_dir, subset, config):
         results = model.detect([image], verbose=0)
         r = results[0]
         # Compute AP
-        print(image_id,dataset.image_info[image_id]["id"])
         #print(gt_mask.shape,r['masks'].shape)       
-        try:
-            AP, precisions, recalls, overlaps =\
+        #try:
+        AP, precisions, recalls, overlaps =\
                     utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
                             r["rois"], r["class_ids"], r["scores"], r['masks'])
-        except:
-            print(image_id,dataset.image_info[image_id]["id"])
-            print(gt_mask.shape,r['masks'].shape)
+        #except:
+        #    print(image_id,dataset.image_info[image_id]["id"])
+        #    print(gt_mask.shape,r['masks'].shape)
             #continue
-            break
+        #    break
+        print(AP,dataset.image_info[image_id]["id"])
         APs.append(AP)
         #recallss.append(recalls)
         #   overlapss.append(overlaps)
