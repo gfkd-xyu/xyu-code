@@ -454,7 +454,7 @@ def evaluate(model, dataset_dir, subset, config):
         #try:
         AP, precisions, recalls, overlaps =\
                     utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
-                            r["rois"], r["class_ids"], r["scores"], r['masks'])
+                            r["rois"], r["class_ids"], r["scores"], r['masks'], iou_threshold=0.4)
         #except:
         #    print(image_id,dataset.image_info[image_id]["id"])
         #    print(gt_mask.shape,r['masks'].shape)
