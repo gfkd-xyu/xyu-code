@@ -1815,6 +1815,18 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             if error_count > 5:
                 raise
 
+############################################################
+#  Iteration RPN Class
+############################################################
+class RPN():
+    """
+    fetch 1024*1024 patches from the original images with high resolution
+    """
+    def __init__(self, mode, config, model_dir):
+        
+
+
+
 
 ############################################################
 #  MaskRCNN Class
