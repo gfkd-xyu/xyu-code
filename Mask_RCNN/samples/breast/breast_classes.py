@@ -162,6 +162,7 @@ class BreastInferenceConfig(BreastConfig):
 
 class BreastDataset(utils.Dataset):
 
+
     def load_breast(self, dataset_dir, subset):
         """Load a subset of the breast dataset.
 
@@ -429,6 +430,64 @@ def detect(model, dataset_dir, subset):
 ############################################################
 #  Evaluation
 ############################################################
+# evaluate by cases 
+"""
+results returns a list of dicts, one dict per image. The dict contains:
+        rois: [N, (y1, x1, y2, x2)] detection bounding boxes
+        class_ids: [N] int class IDs
+        scores: [N] float probability scores for the class IDs
+        masks: [H, W, N] instance binary masks
+        probs: [N, num_classes]
+"""
+def evaluate_new(model, dataset_dir, subset, config):
+    """Run evaluation on images in the given directory."""
+    print("Running on images in the given directory")
+
+    dataset = BreastDataset()
+    dataset.load_breast(dataset_dir, subset)
+    dataset.prepare()
+
+    image_ids = dataset.image_ids
+    #image_cases = dataset.image_case 
+    APs = []
+    #for case in image_cases.keys:
+    #    for image_id in image_cases[case]:
+    #        image, image_meta, gt_class_id, gt_bbox, gt_mask = \
+    #            modellib.load_image_gt(dataset, config,
+    #                    image_id, use_mini_mask=False)
+            # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
+            # Run object detection
+    #        results = model.detect([image], verbose=0)[0]
+            
+
+
+    for image_id in image_ids:
+        # Load image and ground truth data
+        image, image_meta, gt_class_id, gt_bbox, gt_mask = \
+                modellib.load_image_gt(dataset, config,
+                        image_id, use_mini_mask=False)
+        # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
+        # Run object detection
+        results = model.detect([image], verbose=0)
+        r = results[0]
+        # Compute AP
+        #print(gt_mask.shape,r['masks'].shape)       
+        #try:
+        AP, precisions, recalls, overlaps =\
+                    utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
+                            r["rois"], r["class_ids"], r["scores"], r['masks'])
+        #except:
+        #    print(image_id,dataset.image_info[image_id]["id"])
+        #    print(gt_mask.shape,r['masks'].shape)
+            #continue
+        #    break
+        print(AP,dataset.image_info[image_id]["id"])
+        APs.append(AP)
+        #recallss.append(recalls)
+        #   overlapss.append(overlaps)
+    print("mAP: ", np.mean(APs))
+    #print("recall: ", recallss)
+    #print("overlap: ", np.mean(overlapss))
 
 def evaluate(model, dataset_dir, subset, config):
     """Run evaluation on images in the given directory."""
