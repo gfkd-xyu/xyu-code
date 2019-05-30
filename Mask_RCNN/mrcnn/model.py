@@ -1816,16 +1816,121 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             if error_count > 5:
                 raise
 
+
 ############################################################
-#  Iteration RPN Class
+#  Magnifying Network
 ############################################################
-class RPN():
+
+def rpn_graph(feature_map, anchors_per_location, anchor_stride):
+    """Builds the computation graph of Region Proposal Network.
+
+    feature_map: backbone features [batch, height, width, depth]
+    anchors_per_location: number of anchors per pixel in the feature map
+    anchor_stride: Controls the density of anchors. Typically 1 (anchors for
+                   every pixel in the feature map), or 2 (every other pixel).
+
+    Returns:
+        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
+        rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+        rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+                  applied to anchors.
+    """
+    # TODO: check if stride of 2 causes alignment issues if the feature map
+    # is not even.
+    # Shared convolutional base of the RPN
+    shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu',
+                       strides=anchor_stride,
+                       name='rpn_conv_shared')(feature_map)
+
+    # Anchor Score. [batch, height, width, anchors per location * 2].
+    x = KL.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
+                  activation='linear', name='rpn_class_raw')(shared)
+
+    # Reshape to [batch, anchors, 2]
+    rpn_class_logits = KL.Lambda(
+        lambda t: tf.reshape(t, [tf.shape(t)[0], -1, 2]))(x)
+
+    # Softmax on last dimension of BG/FG.
+    rpn_probs = KL.Activation(
+        "softmax", name="rpn_class_xxx")(rpn_class_logits)
+
+    # Bounding box refinement. [batch, H, W, anchors per location * depth]
+    # where depth is [x, y, log(w), log(h)]
+    x = KL.Conv2D(anchors_per_location * 4, (1, 1), padding="valid",
+                  activation='linear', name='rpn_bbox_pred')(shared)
+
+    # Reshape to [batch, anchors, 4]
+    rpn_bbox = KL.Lambda(lambda t: tf.reshape(t, [tf.shape(t)[0], -1, 4]))(x)
+
+    return [rpn_class_logits, rpn_probs, rpn_bbox]
+
+
+def build_mn_model(anchor_stride, anchors_per_location, depth):
+    """Builds a Keras model of the iteration RPN to magnify original images,
+    so we call it Magnifying Network.
+
+    anchors_per_location: number of anchors per pixel in the feature map
+    anchor_stride: Controls the density of anchors. Typically 1 (anchors for
+                   every pixel in the feature map), or 2 (every other pixel).
+    depth: Depth of the backbone feature map.
+
+    Returns a Keras Model object. The model outputs, when called, are:
+    rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
+    rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+    rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+                applied to anchors.
+    """
+    input_feature_map = KL.Input(shape=[None, None, depth],
+                                 name="input_mn_feature_map")
+    outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
+    return KM.Model([input_feature_map], outputs, name="rpn_model")
+
+
+############################################################
+#  Magnifying Network Class (Iteration RPN Class)
+############################################################
+class MN():
     """
     fetch 1024*1024 patches from the original images with high resolution
     """
     def __init__(self, mode, config, model_dir):
-        
+        assert mode in ["training", "inference"]
+        self.mode = mode 
+        self.config = config
+        self.model_dir = model_dir
+        self.keras_model = self.build(mode=mode,config=config)
 
+    def build(self, mode, config):
+        """
+        build iteration RPN
+        """ 
+        assert mode in ['training', 'inference']
+
+        # Image size must be dividable by 2 multiple times
+        h, w = config.IMAGE_SHAPE[:2]
+        if h / 2**6 != int(h / 2**6) or w / 2**6 != int(w / 2**6):
+            raise Exception("Image size must be dividable by 2 at least 6 times "
+                            "to avoid fractions when downscaling and upscaling."
+                            "For example, use 256, 320, 384, 448, 512, ... etc. ")
+
+        # Inputs
+        input_image = KL.Input(
+            shape=[None, None, config.IMAGE_SHAPE[2]], name="input_image")
+        input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE],
+                                    name="input_image_meta")
+        if mode == "training":
+            # RPN GT
+            input_rpn_match = KL.Input(
+                shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
+            input_rpn_bbox = KL.Input(
+                shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
+        elif mode == "inference":
+            # Anchors in normalized coordinates
+            input_anchors = KL.Input(shape=[None, 4], name="input_anchors")
+
+        # build the first RPN
+        
+         
 
 
 
