@@ -1821,8 +1821,8 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
 #  Magnifying Network
 ############################################################
 
-def rpn_graph(feature_map, anchors_per_location, anchor_stride):
-    """Builds the computation graph of Region Proposal Network.
+def mn_graph(input_image, anchor_stride):
+    """Builds the computation graph of Magnifying Network.
 
     feature_map: backbone features [batch, height, width, depth]
     anchors_per_location: number of anchors per pixel in the feature map
@@ -1830,60 +1830,60 @@ def rpn_graph(feature_map, anchors_per_location, anchor_stride):
                    every pixel in the feature map), or 2 (every other pixel).
 
     Returns:
-        rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
-        rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
-        rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+        mn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
+        mn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+        mn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
                   applied to anchors.
     """
     # TODO: check if stride of 2 causes alignment issues if the feature map
     # is not even.
     # Shared convolutional base of the RPN
-    shared = KL.Conv2D(512, (3, 3), padding='same', activation='relu',
+    shared = KL.Conv2D(256, (3, 3), padding='valid', dilation_rate=512, activation='relu',
                        strides=anchor_stride,
-                       name='rpn_conv_shared')(feature_map)
+                       name='mn_conv_shared')(input_image)
 
     # Anchor Score. [batch, height, width, anchors per location * 2].
-    x = KL.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
-                  activation='linear', name='rpn_class_raw')(shared)
+    x = KL.Conv2D(2, (1, 1), padding='valid',
+                  activation='linear', name='mn_class_raw')(shared)
 
     # Reshape to [batch, anchors, 2]
-    rpn_class_logits = KL.Lambda(
+    mn_class_logits = KL.Lambda(
         lambda t: tf.reshape(t, [tf.shape(t)[0], -1, 2]))(x)
 
     # Softmax on last dimension of BG/FG.
-    rpn_probs = KL.Activation(
-        "softmax", name="rpn_class_xxx")(rpn_class_logits)
+    mn_probs = KL.Activation(
+        "softmax", name="mn_class_xxx")(mn_class_logits)
 
     # Bounding box refinement. [batch, H, W, anchors per location * depth]
     # where depth is [x, y, log(w), log(h)]
-    x = KL.Conv2D(anchors_per_location * 4, (1, 1), padding="valid",
-                  activation='linear', name='rpn_bbox_pred')(shared)
+    x = KL.Conv2D(4, (1, 1), padding="valid",
+                  activation='linear', name='mn_bbox_pred')(shared)
 
     # Reshape to [batch, anchors, 4]
-    rpn_bbox = KL.Lambda(lambda t: tf.reshape(t, [tf.shape(t)[0], -1, 4]))(x)
+    mn_bbox = KL.Lambda(lambda t: tf.reshape(t, [tf.shape(t)[0], -1, 4]))(x)
 
-    return [rpn_class_logits, rpn_probs, rpn_bbox]
+    return [mn_probs, mn_bbox]
 
 
-def build_mn_model(anchor_stride, anchors_per_location, depth):
+def mn_model(input_image, anchor_stride):
     """Builds a Keras model of the iteration RPN to magnify original images,
     so we call it Magnifying Network.
 
-    anchors_per_location: number of anchors per pixel in the feature map
+    #anchors_per_location: number of anchors per pixel in the feature map
     anchor_stride: Controls the density of anchors. Typically 1 (anchors for
                    every pixel in the feature map), or 2 (every other pixel).
-    depth: Depth of the backbone feature map.
+    #depth: Depth of the backbone feature map.
 
     Returns a Keras Model object. The model outputs, when called, are:
-    rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
-    rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
-    rpn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
+    mn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
+    mn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
+    mn_bbox: [batch, H * W * anchors_per_location, (dy, dx, log(dh), log(dw))] Deltas to be
                 applied to anchors.
     """
-    input_feature_map = KL.Input(shape=[None, None, depth],
-                                 name="input_mn_feature_map")
-    outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride)
-    return KM.Model([input_feature_map], outputs, name="rpn_model")
+    #input_feature_map = KL.Input(shape=[None, None, depth],
+    #                             name="input_mn_feature_map")
+    outputs = mn_graph(input_image, anchor_stride)
+    return KM.Model([input_image], outputs, name="mn_model")
 
 
 ############################################################
@@ -1927,9 +1927,137 @@ class MN():
         elif mode == "inference":
             # Anchors in normalized coordinates
             input_anchors = KL.Input(shape=[None, 4], name="input_anchors")
+ 
+        # Anchors
+        if mode == "training":
+            anchors = self.get_mn_anchors(config.IMAGE_SHAPE)
+            # Duplicate across the batch dimension because Keras requires it
+            # TODO: can this be optimized to avoid duplicating the anchors?
+            anchors = np.broadcast_to(anchors, (config.BATCH_SIZE,) + anchors.shape)
+            # A hack to get around Keras's bad support for constants
+            anchors = KL.Lambda(lambda x: tf.Variable(anchors), name="anchors")(input_image)
+        else:
+            anchors = input_anchors
 
-        # build the first RPN
         
+        # build the first MN
+        mn_outputs = mn_model(input_image, config.RPN_ANCHOR_STRIDE)
+        # layers
+        #mn_outputs = mn(input_image)
+        # Concatenate layer outputs
+        # Convert from list of lists of level outputs to list of lists
+        # of outputs across levels.
+        # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
+        output_names = ["mn_class", "mn_bbox"]
+        outputs = list(zip(*mn_outputs))
+        outputs = [KL.Concatenate(axis=1, name=n)(list(o))
+                   for o, n in zip(outputs, output_names)]
+
+        mn_class, mn_bbox = outputs
+
+        # Generate proposals
+        # Proposals are [batch, N, (y1, x1, y2, x2)] in normalized coordinates
+        # and zero padded.
+        proposal_count = config.POST_NMS_ROIS_TRAINING if mode == "training"\
+            else config.POST_NMS_ROIS_INFERENCE
+        mn_rois = ProposalLayer(
+            proposal_count=proposal_count,
+            nms_threshold=config.RPN_NMS_THRESHOLD,
+            name="ROI",
+            config=config)([mn_class, mn_bbox, anchors])
+        
+        if mode == "training":
+            # Class ID mask to mark class IDs supported by the dataset the image
+            # came from.
+            #active_class_ids = KL.Lambda(
+            #    lambda x: parse_image_meta_graph(x)["active_class_ids"]
+            #    )(input_image_meta)
+
+            if not config.USE_RPN_ROIS:
+                # Ignore predicted ROIs and use ROIs provided as an input.
+                input_rois = KL.Input(shape=[config.POST_NMS_ROIS_TRAINING, 4],
+                                      name="input_roi", dtype=np.int32)
+                # Normalize coordinates
+                target_rois = KL.Lambda(lambda x: norm_boxes_graph(
+                    x, K.shape(input_image)[1:3]))(input_rois)
+            else:
+                target_rois = mn_rois
+
+            # Generate detection targets
+            # Subsamples proposals and generates target outputs for training
+            # Note that proposal class IDs, gt_boxes, and gt_masks are zero
+            # padded. Equally, returned rois and targets are zero padded.
+            #rois, target_class_ids, target_bbox, target_mask =\
+            #    DetectionTargetLayer(config, name="proposal_targets")([
+            #        target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
+
+            # Network Heads
+            # TODO: verify that this handles zero padded ROIs
+            #mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
+            #    fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
+            #                         config.POOL_SIZE, config.NUM_CLASSES,
+            #                         train_bn=config.TRAIN_BN,
+            #                         fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
+
+            #mrcnn_mask = build_fpn_mask_graph(rois, mrcnn_feature_maps,
+            #                                  input_image_meta,
+            #                                  config.MASK_POOL_SIZE,
+            #                                  config.NUM_CLASSES,
+            #                                  train_bn=config.TRAIN_BN)
+
+            # TODO: clean up (use tf.identify if necessary)
+            #output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
+
+            # Losses
+            #rpn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="rpn_class_loss")(
+            #    [input_rpn_match, rpn_class_logits])
+            mn_bbox_loss = KL.Lambda(lambda x: rpn_bbox_loss_graph(config, *x), name="rpn_bbox_loss")(
+                [input_rpn_bbox, input_rpn_match, mn_bbox])
+            #class_loss = KL.Lambda(lambda x: mrcnn_class_loss_graph(*x), name="mrcnn_class_loss")(
+            #    [target_class_ids, mrcnn_class_logits, active_class_ids])
+            #bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
+            #    [target_bbox, target_class_ids, mrcnn_bbox])
+            #mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
+            #    [target_mask, target_class_ids, mrcnn_mask])
+
+            # Model
+            inputs = [input_image, input_image_meta,
+                      input_rpn_match, input_rpn_bbox, input_gt_boxes]
+            if not config.USE_RPN_ROIS:
+                inputs.append(input_rois)
+            outputs = [rpn_class_logits, rpn_class, rpn_bbox,
+                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
+                       rpn_rois, output_rois,
+                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
+            model = KM.Model(inputs, outputs, name='mask_rcnn')
+        else:
+            # Network Heads
+            # Proposal classifier and BBox regressor heads
+            mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
+                fpn_classifier_graph(rpn_rois, mrcnn_feature_maps, input_image_meta,
+                                     config.POOL_SIZE, config.NUM_CLASSES,
+                                     train_bn=config.TRAIN_BN,
+                                     fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
+
+            # Detections
+            # output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in
+            # normalized coordinates
+            detections = DetectionLayer(config, name="mrcnn_detection")(
+                [rpn_rois, mrcnn_class, mrcnn_bbox, input_image_meta])
+
+            # Create masks for detections
+            detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
+            mrcnn_mask = build_fpn_mask_graph(detection_boxes, mrcnn_feature_maps,
+                                              input_image_meta,
+                                              config.MASK_POOL_SIZE,
+                                              config.NUM_CLASSES,
+                                              train_bn=config.TRAIN_BN)
+
+            model = KM.Model([input_image, input_image_meta, input_anchors],
+                             [detections, mrcnn_class, mrcnn_bbox,
+                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
+                             name='mask_rcnn')
+
          
 
 
@@ -2721,6 +2849,29 @@ class MaskRCNN():
             })
         return results
 
+    def get_mn_anchors(self, image_shape):
+        """Returns anchor pyramid for the given image size."""
+        #backbone_shapes = compute_backbone_shapes(self.config, image_shape)
+        backbone_shapes = np.array([1024, 1024])
+        # Cache anchors and reuse if image shape is the same
+        if not hasattr(self, "_anchor_cache"):
+            self._anchor_cache = {}
+        if not tuple(image_shape) in self._anchor_cache:
+            # Generate Anchors
+            a = utils.generate_pyramid_anchors(
+                [1024],
+                [1],
+                backbone_shapes,
+                [3],
+                self.config.RPN_ANCHOR_STRIDE)
+            # Keep a copy of the latest anchors in pixel coordinates because
+            # it's used in inspect_model notebooks.
+            # TODO: Remove this after the notebook are refactored to not use it
+            self.anchors = a
+            # Normalize coordinates
+            self._anchor_cache[tuple(image_shape)] = utils.norm_boxes(a, image_shape[:2])
+        return self._anchor_cache[tuple(image_shape)]
+    
     def get_anchors(self, image_shape):
         """Returns anchor pyramid for the given image size."""
         backbone_shapes = compute_backbone_shapes(self.config, image_shape)
