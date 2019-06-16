@@ -79,6 +79,43 @@ def compute_iou(box, boxes, box_area, boxes_area):
     iou = intersection / union
     return iou
 
+def compute_mn_iou(box, boxes, box_area, boxes_area):
+    """Calculates IoU of the given box with the array of the given boxes.
+    box: 1D vector [y1, x1, y2, x2]
+    boxes: [boxes_count, (y1, x1, y2, x2)]
+    box_area: float. the area of 'box'
+    boxes_area: array of length boxes_count.
+
+    Note: the areas are passed in rather than calculated here for
+    efficiency. Calculate once in the caller to avoid duplicate work.
+    """
+    # Calculate intersection areas
+    y1 = np.maximum(box[0], boxes[:, 0])
+    y2 = np.minimum(box[2], boxes[:, 2])
+    x1 = np.maximum(box[1], boxes[:, 1])
+    x2 = np.minimum(box[3], boxes[:, 3])
+    intersection = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+    #union = box_area + boxes_area[:] - intersection[:]
+    iou = intersection / box_area - 1.0
+    return iou
+
+def compute_mn_overlaps(boxes1, boxes2):
+    """Computes IoU overlaps between two sets of boxes.
+    boxes1, boxes2: [N, (y1, x1, y2, x2)].
+
+    For better performance, pass the largest set first and the smaller second.
+    """
+    # Areas of anchors and GT boxes
+    area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
+    area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
+
+    # Compute overlaps to generate matrix [boxes1 count, boxes2 count]
+    # Each cell contains the IoU value.
+    overlaps = np.zeros((boxes1.shape[0], boxes2.shape[0]))
+    for i in range(overlaps.shape[1]):
+        box2 = boxes2[i]
+        overlaps[:, i] = compute_mn_iou(box2, boxes1, area2[i], area1)
+    return overlaps
 
 def compute_overlaps(boxes1, boxes2):
     """Computes IoU overlaps between two sets of boxes.
@@ -257,6 +294,7 @@ class Dataset(object):
     def __init__(self, class_map=None):
         self._image_ids = []
         self.image_info = []
+        self.image_case = {}
         # Background is always the first class
         self.class_info = [{"source": "", "id": 0, "name": "BG"}]
         self.source_class_ids = {}
@@ -284,6 +322,17 @@ class Dataset(object):
         image_info.update(kwargs)
         self.image_info.append(image_info)
 
+    def add_case(self, case_id, image_id):
+        if self.image_case.get(case_id) is not None:
+            self.image_case[case_id].append(image_id)
+        image_case = {
+                case_id: [image_id]
+                }
+        self.image_case.update(image_case)
+    
+
+
+
     def image_reference(self, image_id):
         """Return a link to the image in its source Website or details about
         the image that help looking it up or debugging it.
@@ -310,6 +359,11 @@ class Dataset(object):
         self.class_names = [clean_name(c["name"]) for c in self.class_info]
         self.num_images = len(self.image_info)
         self._image_ids = np.arange(self.num_images)
+
+        #prepare image_case 
+        for info, id in zip(self.image_info, self.image_ids):
+            case_id = "_".join(info["id"].split("_")[2:4])
+            self.add_case(case_id, id)
 
         # Mapping from source class and image IDs to internal IDs
         self.class_from_source_map = {"{}.{}".format(info['source'], info['id']): id

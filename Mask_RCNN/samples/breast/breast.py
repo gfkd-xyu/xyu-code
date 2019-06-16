@@ -104,8 +104,8 @@ class BreastConfig(Config):
     # Input image resizing
     # Random crops of size 512x512
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 1024 
-    IMAGE_MAX_DIM = 1024
+    IMAGE_MIN_DIM = 4096 
+    IMAGE_MAX_DIM = 4096
     IMAGE_CHANNEL_COUNT = 3
     IMAGE_MIN_SCALE = 0
 
@@ -291,19 +291,19 @@ def train(model, dataset_dir, subset):
 
     # If starting from imagenet, train heads only for a bit
     # since they have random weights
-    print("Train network heads")
+    print("Train network")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=20,
                 augmentation=augmentation,
-                layers='heads')
+                )
 
-    print("Train all layers")
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=100,
-                augmentation=augmentation,
-                layers='all')
+    #print("Train all layers")
+    #model.train(dataset_train, dataset_val,
+    #            learning_rate=config.LEARNING_RATE,
+    #            epochs=100,
+    #            augmentation=augmentation,
+    #            layers='all')
 
 
 ############################################################
@@ -499,7 +499,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', required=False,
                         metavar="/path/to/dataset/",
                         help='Root directory of the dataset')
-    parser.add_argument('--weights', required=True,
+    parser.add_argument('--weights', required=False,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
     parser.add_argument('--logs', required=False,
@@ -514,10 +514,12 @@ if __name__ == '__main__':
     # Validate arguments
     if args.command == "train":
         assert args.dataset, "Argument --dataset is required for training"
-        CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
+        #CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
     elif args.command == "detect" or args.command == "evaluate":
         assert args.subset, "Provide --subset to run prediction on"
-        CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
+        # CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
     if args.subset:
@@ -533,11 +535,13 @@ if __name__ == '__main__':
 
     # Create model
     if args.command == "train":
-        model = modellib.MaskRCNN(mode="training", config=config,
-                                  model_dir=args.logs)
+        #model = modellib.MaskRCNN(mode="training", config=config,
+        #                          model_dir=args.logs)
+        model = modellib.MN(mode="training", config=config, model_dir=args.logs)
     else:
-        model = modellib.MaskRCNN(mode="inference", config=config,
-                                  model_dir=args.logs)
+        #model = modellib.MaskRCNN(mode="inference", config=config,
+        #                          model_dir=args.logs)
+        model = modellib.MN(mode="inference", config=config, model_dir=args.logs)
 
     # Select weights file to load
     if args.weights.lower() == "coco":
@@ -555,15 +559,15 @@ if __name__ == '__main__':
         weights_path = args.weights
 
     # Load weights
-    print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
+    #print("Loading weights ", weights_path)
+    #if args.weights.lower() == "coco":
         # Exclude the last layers because they require a matching
         # number of classes
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
-    else:
-        model.load_weights(weights_path, by_name=True)
+    #    model.load_weights(weights_path, by_name=True, exclude=[
+    #        "mrcnn_class_logits", "mrcnn_bbox_fc",
+    #        "mrcnn_bbox", "mrcnn_mask"])
+    #else:
+    #    model.load_weights(weights_path, by_name=True)
 
     # Train or evaluate
     if args.command == "train":
