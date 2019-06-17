@@ -460,7 +460,10 @@ def evaluate(model, dataset_dir, subset, config):
         #    print(gt_mask.shape,r['masks'].shape)
             #continue
         #    break
-        print(AP,dataset.image_info[image_id]["id"])
+        #print(AP,dataset.image_info[image_id]["id"])
+        if AP==0:
+            if not len(overlaps) : continue 
+            print(np.amax(overlaps),dataset.image_info[image_id]["id"][12:])
         APs.append(AP)
         #recallss.append(recalls)
         #   overlapss.append(overlaps)
