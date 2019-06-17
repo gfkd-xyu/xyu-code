@@ -41,6 +41,7 @@ import numpy as np
 import skimage.io
 import SimpleITK as sitk
 import pandas as pd
+import cv2
 from skimage import img_as_ubyte
 from imgaug import augmenters as iaa
 from sklearn.model_selection import train_test_split
@@ -65,6 +66,8 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 # Save submission files here
 RESULTS_DIR = os.path.join(ROOT_DIR, "results/breast/")
 
+#CSV_TRAIN = "/home/xyu/mass_case_description_train_set.csv"
+#CSV_TEST = "/home/xyu/mass_case_description_test_set.csv"
 # The dataset doesn't have a standard train/val split, so I picked
 # a variety of images to surve as a validation set.
 # VAL_IMAGE_IDS = 
@@ -81,13 +84,13 @@ class BreastConfig(Config):
     NAME = "breast"
 
     # Adjust depending on your GPU memory
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 1
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 2  # Background + nucleus
+    NUM_CLASSES = 1 + 1  # Background + nucleus
 
     # Number of training and validation steps per epoch
-    STEPS_PER_EPOCH = (874 - 262) // IMAGES_PER_GPU
+    STEPS_PER_EPOCH = (873 - 262) // IMAGES_PER_GPU
     VALIDATION_STEPS = max(1, 262 // IMAGES_PER_GPU)
 
     # Don't exclude based on confidence. Since we have two classes
@@ -101,18 +104,17 @@ class BreastConfig(Config):
     # Input image resizing
     # Random crops of size 512x512
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
+    IMAGE_MIN_DIM = 4096 
+    IMAGE_MAX_DIM = 4096
     IMAGE_CHANNEL_COUNT = 3
     IMAGE_MIN_SCALE = 0
 
     # Length of square anchor side in pixels
-    #RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)
-    RPN_ANCHOR_SCALES = (32,64,128,256,512)
+    RPN_ANCHOR_SCALES = (16, 32, 64, 128, 256)
 
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 1000 
-    POST_NMS_ROIS_INFERENCE = 1000
+    POST_NMS_ROIS_INFERENCE = 2000
 
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
@@ -124,8 +126,8 @@ class BreastConfig(Config):
     # Grayscale images
     # IMAGE_CHANNEL_COUNT = 1
     # Image mean (Grayscale)
+    # MEAN_PIXEL = np.array([32768.0, 32768.0, 32768.0])
     MEAN_PIXEL = np.array([127.5, 127.5, 127.5])
-
     # If enabled, resizes instance masks to a smaller size to reduce
     # memory load. Recommended when using high-resolution images.
     USE_MINI_MASK = True
@@ -139,7 +141,7 @@ class BreastConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 128
 
     # Maximum number of ground truth instances to use in one image
-    MAX_GT_INSTANCES = 10
+    MAX_GT_INSTANCES = 200
 
     # Max number of final detections per image
     DETECTION_MAX_INSTANCES = 7
@@ -150,32 +152,30 @@ class BreastInferenceConfig(BreastConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
     # Don't resize imager for inferencing
-    # IMAGE_RESIZE_MODE = "square"
+    # IMAGE_RESIZE_MODE = "pad64"
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
-    RPN_NMS_THRESHOLD = 0.5
-    DETECTION_MIN_CONFIDENCE = 0.5
+    RPN_NMS_THRESHOLD = 0.7
+    DETECTION_MIN_CONFIDENCE = 0.6
 
 ############################################################
 #  Dataset
 ############################################################
 
 class BreastDataset(utils.Dataset):
-
+    
     def load_breast(self, dataset_dir, subset):
         """Load a subset of the breast dataset.
 
         dataset_dir: Root directory of the dataset
         subset: Subset to load. Either the name of the sub-directory,
-                such as stage1_train, stage1_test, ...etc. or, one of:
+                 such as stage1_train, stage1_test, ...etc. or, one of:
                 * train: stage1_train excluding validation images
                 * val: validation images from VAL_IMAGE_IDS
         """
         # Add classes. We have one class.
         # Naming the dataset nucleus, and the class nucleus
-        # self.add_class("breast", 1, "NORMAL")
-        self.add_class("breast", 1, "BENIGN")
-        self.add_class("breast", 2, "MALIGNANT")
+        self.add_class("breast", 1, "breast")
         df = pd.read_csv(CSV_DIR)
         # Which subset?
         # "val": use hard-coded list above
@@ -187,24 +187,24 @@ class BreastDataset(utils.Dataset):
         if subset == "test":
             image_ids = []
             for d in os.listdir(dataset_dir):
-                _, p, p_id, rl, iv=d.split("_")
+                _,p, p_id, rl, iv = d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
                     # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
                     #        (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values[0]
                     bd = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
-                            (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['breast_density'].values[0]
+                             (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['breast_density'].values[0]
                     if bd==2 or bd==1:
                         image_ids.append(d)
             #image_ids = os.listdir(dataset_dir)
         else:
-            x = []
+            x=[]
             for d in os.listdir(dataset_dir):
                 _, p, p_id, rl, iv=d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
-                    # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
+                   # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
                     #        (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values[0]
                     bd = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
-                            (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['breast_density'].values[0]
+                             (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['breast_density'].values[0]
                     if bd==2 or bd==1:
                         x.append(d)
             #x = os.listdir(dataset_dir)
@@ -215,7 +215,6 @@ class BreastDataset(utils.Dataset):
             else:
                 # Get image ids from directory names
                 image_ids = train_x
-        
 
         # Add images
         for image_id in image_ids:
@@ -227,7 +226,6 @@ class BreastDataset(utils.Dataset):
     def load_mask(self, image_id):
         """Generate instance masks for an image.
        Returns:
-        
         masks: A bool array of shape [height, width, instance count] with
             one mask per instance.
         class_ids: a 1D array of class IDs of the instance masks.
@@ -235,12 +233,9 @@ class BreastDataset(utils.Dataset):
         info = self.image_info[image_id]
         # Get mask directory from image path
         mask_dir = os.path.join(os.path.dirname(os.path.dirname(info['path'])), "masks")
-        # get image class_id
-        _, _, pt_id, lr, iv = info["id"].split("_")
-        df = pd.read_csv(CSV_DIR)
+
         # Read mask files from .png image
         mask = []
-        class_ids = []
         for f in os.listdir(mask_dir):
             if f.endswith(".png"):
                 #ds = sitk.ReadImage(os.path.join(mask_dir, f))
@@ -249,15 +244,10 @@ class BreastDataset(utils.Dataset):
                 #m = m.astype(np.bool)
                 m = skimage.io.imread(os.path.join(mask_dir, f)).astype(np.bool)
                 mask.append(m)
-                #print(pt_id,f,df[(df['patient_id']=="P_"+pt_id)&(df['left or right breast']==lr)&(df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values)
-                class_name = df[(df['patient_id']=="P_"+pt_id)&(df['left or right breast']==lr)&(df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values[0]
-                class_id = 2 if class_name=='MALIGNANT' else 1
-                class_ids.append(class_id)
         mask = np.stack(mask, axis=-1)
-        class_ids = np.array(class_ids)
         # Return mask, and array of class IDs of each instance. Since we have
         # one class ID, we return an array of ones
-        return mask, class_ids.astype(np.int32)  #np.ones([mask.shape[-1]], dtype=np.int32)
+        return mask, np.ones([mask.shape[-1]], dtype=np.int32)
 
     def image_reference(self, image_id):
         """Return the path of the image."""
@@ -293,26 +283,27 @@ def train(model, dataset_dir, subset):
                    iaa.Affine(rotate=180),
                    iaa.Affine(rotate=270)]),
         #iaa.Multiply((0.8, 1.5)),
-        #iaa.GaussianBlur(sigma=(0.0, 5.0))
+        #iaa.Invert(1,per_channel=True,max_value=65535)
+       # iaa.GaussianBlur(sigma=(0.0, 5.0))
     ])
 
     # *** This training schedule is an example. Update to your needs ***
 
     # If starting from imagenet, train heads only for a bit
     # since they have random weights
-    print("Train network heads")
+    print("Train network")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=20,
                 augmentation=augmentation,
-                layers='heads')
+                )
 
-    print("Train all layers")
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=100,
-                augmentation=augmentation,
-                layers='all')
+    #print("Train all layers")
+    #model.train(dataset_train, dataset_val,
+    #            learning_rate=config.LEARNING_RATE,
+    #            epochs=100,
+    #            augmentation=augmentation,
+    #            layers='all')
 
 
 ############################################################
@@ -411,9 +402,8 @@ def detect(model, dataset_dir, subset):
         rle = mask_to_rle(source_id, r["masks"], r["scores"])
         submission.append(rle)
         # Save image with masks
-        print(dataset.image_info[image_id]["id"])
         visualize.display_instances(
-            image, r['rois'], r['masks'], r['class_ids'],
+             image, r['rois'], r['masks'], r['class_ids'],
             dataset.class_names, r['scores'],
             show_bbox=True, show_mask=True,
             title="Predictions")
@@ -434,40 +424,62 @@ def evaluate(model, dataset_dir, subset, config):
     """Run evaluation on images in the given directory."""
     print("Running on images in the given directory")
 
+    submit_dir = "submit_{:%Y%m%dT%H%M%S}".format(datetime.datetime.now())
+    submit_dir = os.path.join('/backup/yuxin/Mask_RCNN/samples/breast/', submit_dir)
+    os.makedirs(submit_dir)
+    
     dataset = BreastDataset()
     dataset.load_breast(dataset_dir, subset)
     dataset.prepare()
 
     image_ids = dataset.image_ids
+    print(len(image_ids))
     APs = []
+    #sub = {}
     for image_id in image_ids:
         # Load image and ground truth data
         image, image_meta, gt_class_id, gt_bbox, gt_mask = \
                 modellib.load_image_gt(dataset, config,
                         image_id, use_mini_mask=False)
-        # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
+        #molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
         # Run object detection
         results = model.detect([image], verbose=0)
         r = results[0]
         # Compute AP
-        #print(gt_mask.shape,r['masks'].shape)       
-        #try:
-        AP, precisions, recalls, overlaps =\
-                    utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
-                            r["rois"], r["class_ids"], r["scores"], r['masks'], iou_threshold=0.4)
-        #except:
-        #    print(image_id,dataset.image_info[image_id]["id"])
-        #    print(gt_mask.shape,r['masks'].shape)
-            #continue
-        #    break
-        #print(AP,dataset.image_info[image_id]["id"])
-        if AP==0:
-            if not len(overlaps) : continue 
-            print(np.amax(overlaps),dataset.image_info[image_id]["id"][12:])
+        print(dataset.image_info[image_id]['id']) 
+        try:
+            AP, precisions, recalls, overlaps =\
+                utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
+                        r["rois"], r["class_ids"], r["scores"], r['masks'])
+        except:
+            #print(image_id,dataset.image_info[image_id]["id"])
+            #print(gt_mask.shape,r['masks'].shape)
+            continue
         APs.append(AP)
+        #if AP == 0:
+        #    visualize.display_instances(
+        #            image, r['rois'], r['masks'], r['class_ids'],
+        #            dataset.class_names, r['scores'],
+        #            show_bbox=True, show_mask=True,
+        #            title="Predictions")
+        #    plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]))
+            #for i in range(gt_mask.shape[-1]):
+        #    gt_mask = np.where(gt_mask, 255, 0) 
+        #    cv2.imwrite("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]+'_mask'),
+        #            gt_mask[:,:,0])
+            #img_ori = cv2.imread("/backup/yuxin/CBIS-MASS-PNG/test/{}/images/000000.png".format(dataset.image_info[image_id]["id"]),
+            #        cv2.IMREAD_ANYDEPTH)
+            #cv2.imwrite("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]+'_ori'))
+            #mask = dataset.load_mask(image_id).astype(np.uint8)
+            #plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]+'_mask'))
+        #sub.append(dataset.image_info[image_id]["id"]:AP)
+        print(AP,dataset.image_info[image_id]["id"])
         #recallss.append(recalls)
         #   overlapss.append(overlaps)
     print("mAP: ", np.mean(APs))
+    #file_path = os.path.join('./', "submit.csv")
+    #with open(file_path, "w") as f:
+    #    f.write(submission)
     #print("recall: ", recallss)
     #print("overlap: ", np.mean(overlapss))
 
@@ -487,7 +499,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', required=False,
                         metavar="/path/to/dataset/",
                         help='Root directory of the dataset')
-    parser.add_argument('--weights', required=True,
+    parser.add_argument('--weights', required=False,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
     parser.add_argument('--logs', required=False,
@@ -502,22 +514,20 @@ if __name__ == '__main__':
     # Validate arguments
     if args.command == "train":
         assert args.dataset, "Argument --dataset is required for training"
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
+        #CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
     elif args.command == "detect" or args.command == "evaluate":
         assert args.subset, "Provide --subset to run prediction on"
-
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
+        # CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
     if args.subset:
         print("Subset: ", args.subset)
     print("Logs: ", args.logs)
 
-    if args.command == "train":
-        CSV_DIR = "/backup/home/yuxin/mass_case_description_train_set.csv"
-    else:
-        CSV_DIR = "/backup/home/yuxin/mass_case_description_test_set.csv"
     # Configurations
     if args.command == "train":
-       
         config = BreastConfig()
     else:
         config = BreastInferenceConfig()
@@ -525,11 +535,13 @@ if __name__ == '__main__':
 
     # Create model
     if args.command == "train":
-        model = modellib.MaskRCNN(mode="training", config=config,
-                                  model_dir=args.logs)
+        #model = modellib.MaskRCNN(mode="training", config=config,
+        #                          model_dir=args.logs)
+        model = modellib.MN(mode="training", config=config, model_dir=args.logs)
     else:
-        model = modellib.MaskRCNN(mode="inference", config=config,
-                                  model_dir=args.logs)
+        #model = modellib.MaskRCNN(mode="inference", config=config,
+        #                          model_dir=args.logs)
+        model = modellib.MN(mode="inference", config=config, model_dir=args.logs)
 
     # Select weights file to load
     if args.weights.lower() == "coco":
@@ -547,15 +559,15 @@ if __name__ == '__main__':
         weights_path = args.weights
 
     # Load weights
-    print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
+    #print("Loading weights ", weights_path)
+    #if args.weights.lower() == "coco":
         # Exclude the last layers because they require a matching
         # number of classes
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
-    else:
-        model.load_weights(weights_path, by_name=True)
+    #    model.load_weights(weights_path, by_name=True, exclude=[
+    #        "mrcnn_class_logits", "mrcnn_bbox_fc",
+    #        "mrcnn_bbox", "mrcnn_mask"])
+    #else:
+    #    model.load_weights(weights_path, by_name=True)
 
     # Train or evaluate
     if args.command == "train":
