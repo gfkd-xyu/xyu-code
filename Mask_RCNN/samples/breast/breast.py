@@ -104,8 +104,8 @@ class BreastConfig(Config):
     # Input image resizing
     # Random crops of size 512x512
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 4096 
-    IMAGE_MAX_DIM = 4096
+    IMAGE_MIN_DIM = 512 
+    IMAGE_MAX_DIM = 512
     IMAGE_CHANNEL_COUNT = 3
     IMAGE_MIN_SCALE = 0
 
@@ -147,6 +147,10 @@ class BreastConfig(Config):
     DETECTION_MAX_INSTANCES = 7
     LEARNING_RATE = 0.0001
 
+    # MN config
+    MN_SCALE = [256]
+    MN_BACKBONE = np.array([[128,128]])
+
 class BreastInferenceConfig(BreastConfig):
     # Set batch size to 1 to run one image at a time
     GPU_COUNT = 1
@@ -157,6 +161,10 @@ class BreastInferenceConfig(BreastConfig):
     # You can increase this during training to generate more propsals.
     RPN_NMS_THRESHOLD = 0.7
     DETECTION_MIN_CONFIDENCE = 0.6
+        # MN config
+    MN_SCALE = [256]
+    MN_BACKBONE = np.array([[128,128]])
+
 
 ############################################################
 #  Dataset
@@ -543,31 +551,32 @@ if __name__ == '__main__':
         #                          model_dir=args.logs)
         model = modellib.MN(mode="inference", config=config, model_dir=args.logs)
 
+    if args.weights is not None:
     # Select weights file to load
-    if args.weights.lower() == "coco":
-        weights_path = COCO_WEIGHTS_PATH
+        if args.weights.lower() == "coco":
+            weights_path = COCO_WEIGHTS_PATH
         # Download weights file
-        if not os.path.exists(weights_path):
-            utils.download_trained_weights(weights_path)
-    elif args.weights.lower() == "last":
+            if not os.path.exists(weights_path):
+                utils.download_trained_weights(weights_path)
+        elif args.weights.lower() == "last":
         # Find last trained weights
-        weights_path = model.find_last()
-    elif args.weights.lower() == "imagenet":
+            weights_path = model.find_last()
+        elif args.weights.lower() == "imagenet":
         # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
-    else:
-        weights_path = args.weights
+            weights_path = model.get_imagenet_weights()
+        else:
+            weights_path = args.weights
 
     # Load weights
     #print("Loading weights ", weights_path)
-    #if args.weights.lower() == "coco":
+        if args.weights.lower() == "coco":
         # Exclude the last layers because they require a matching
         # number of classes
-    #    model.load_weights(weights_path, by_name=True, exclude=[
-    #        "mrcnn_class_logits", "mrcnn_bbox_fc",
-    #        "mrcnn_bbox", "mrcnn_mask"])
-    #else:
-    #    model.load_weights(weights_path, by_name=True)
+            model.load_weights(weights_path, by_name=True, exclude=[
+                "mrcnn_class_logits", "mrcnn_bbox_fc",
+                "mrcnn_bbox", "mrcnn_mask"])
+        else:
+            model.load_weights(weights_path, by_name=True)
 
     # Train or evaluate
     if args.command == "train":
