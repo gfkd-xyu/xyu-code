@@ -925,16 +925,16 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
         bbox_deltas: [batch, num_rois, NUM_CLASSES, (dy, dx, log(dh), log(dw))] Deltas to apply to
                      proposal boxes
     """
-    print("rois:",rois.shape)
+    #print("rois:",rois.shape)
     # ROI Pooling
     # Shape: [batch, num_rois, POOL_SIZE, POOL_SIZE, channels]
     x = PyramidROIAlign([pool_size, pool_size],
                         name="roi_align_classifier")([rois, image_meta] + feature_maps)
-    print("x", x.shape)
+    #print("x", x.shape)
     # Two 1024 FC layers (implemented with Conv2D for consistency)
     x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
                            name="mrcnn_class_conv1")(x)
-    print("x", x.shape)
+    #print("x", x.shape)
 
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_class_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
@@ -946,7 +946,7 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     shared = KL.Lambda(lambda x: K.squeeze(K.squeeze(x, 3), 2),
                        name="pool_squeeze")(x)
 
-    print(shared.shape)
+    #print(shared.shape)
     # Classifier head
     mrcnn_class_logits = KL.TimeDistributed(KL.Dense(num_classes),
                                             name='mrcnn_class_logits')(shared)
@@ -2143,17 +2143,17 @@ def mn_graph(input_image, anchor_stride):
     # TODO: check if stride of 2 causes alignment issues if the feature map
     # is not even.
     # Shared convolutional base of the RPN
-    #shared = KL.Conv2D(64, (3, 3), padding='same', dilation_rate=1, activation='relu',
-    #                   strides=anchor_stride, name='mn_conv1_shared')(input_image)
+    shared = KL.Conv2D(64, (3, 3), padding='same', dilation_rate=1, activation='relu',
+                       strides=anchor_stride, name='mn_conv1_shared')(input_image)
     
-    #shared = KL.Conv2D(128, (3, 3), padding='same', dilation_rate=2, activation='relu',
-    #                   strides=anchor_stride, name='mn_conv2_shared')(shared)
+    shared = KL.Conv2D(128, (3, 3), padding='same', dilation_rate=2, activation='relu',
+                       strides=anchor_stride, name='mn_conv2_shared')(shared)
 
     shared = KL.Conv2D(256, (3, 3), padding='same', dilation_rate=5, activation='relu',
-                       strides=anchor_stride, name='mn_conv_shared')(input_image)
+                       strides=anchor_stride, name='mn_conv3_shared')(input_image)
 
-    #shared = KL.Conv2D(128, (3, 3), padding='same', activation='relu',
-    #                   strides=2, name='mn_conv4_shared')(shared)
+    shared = KL.Conv2D(128, (3, 3), padding='same', activation='relu',
+                       strides=2, name='mn_conv4_shared')(shared)
 
     shared = KL.MaxPooling2D(pool_size=(4, 4), name="mn_pool_shared")(shared)
 
@@ -2260,22 +2260,6 @@ class MN():
         
         # build the first MN
         mn = mn_model(input_image, config.RPN_ANCHOR_STRIDE)
-        # layers
-        # Loop through pyramid layers
-        #mn_outputs = []  # list of lists
-        #mn_outputs.append(mn([input_image]))
-        # Concatenate layer outputs
-        # Convert from list of lists of level outputs to list of lists
-        # of outputs across levels.
-        # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
-        # Concatenate layer outputs
-        # Convert from list of lists of level outputs to list of lists
-        # of outputs across levels.
-        # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
-        #output_names = ["mn_probs", "mn_bbox"]
-        #outputs = list(zip(*mn_outputs))
-        #outputs = [KL.Concatenate(axis=1, name=n)(list(o))
-         #          for o, n in zip(outputs, output_names)]
 
         mn_class_logits, mn_probs, mn_bbox = mn([input_image])
 
@@ -2291,58 +2275,11 @@ class MN():
             config=config)([mn_probs, mn_bbox, anchors])
         
         if mode == "training":
-            # Class ID mask to mark class IDs supported by the dataset the image
-            # came from.
-            #active_class_ids = KL.Lambda(
-            #    lambda x: parse_image_meta_graph(x)["active_class_ids"]
-            #    )(input_image_meta)
-
-            #if not config.USE_RPN_ROIS:
-                # Ignore predicted ROIs and use ROIs provided as an input.
-            #    input_rois = KL.Input(shape=[config.POST_NMS_ROIS_TRAINING, 4],
-            #                          name="input_roi", dtype=np.int32)
-                # Normalize coordinates
-            #    target_rois = KL.Lambda(lambda x: norm_boxes_graph(
-            #        x, K.shape(input_image)[1:3]))(input_rois)
-            #else:
-            #    target_rois = mn_rois
-
-            # Generate detection targets
-            # Subsamples proposals and generates target outputs for training
-            # Note that proposal class IDs, gt_boxes, and gt_masks are zero
-            # padded. Equally, returned rois and targets are zero padded.
-            #rois, target_class_ids, target_bbox, target_mask =\
-            #    DetectionTargetLayer(config, name="proposal_targets")([
-            #        target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
-
-            # Network Heads
-            # TODO: verify that this handles zero padded ROIs
-            #mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-            #    fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
-            #                         config.POOL_SIZE, config.NUM_CLASSES,
-            #                         train_bn=config.TRAIN_BN,
-            #                         fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
-
-            #mrcnn_mask = build_fpn_mask_graph(rois, mrcnn_feature_maps,
-            #                                  input_image_meta,
-            #                                  config.MASK_POOL_SIZE,
-            #                                  config.NUM_CLASSES,
-            #                                  train_bn=config.TRAIN_BN)
-
-            # TODO: clean up (use tf.identify if necessary)
-            #output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
-
             # Losses
             mn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="mn_class_loss")(
                 [input_mn_match, mn_class_logits])
             mn_bbox_loss = KL.Lambda(lambda x: rpn_bbox_loss_graph(config, *x), name="mn_bbox_loss")(
                 [input_mn_bbox, input_mn_match, mn_bbox])
-            #class_loss = KL.Lambda(lambda x: mrcnn_class_loss_graph(*x), name="mrcnn_class_loss")(
-            #    [target_class_ids, mrcnn_class_logits, active_class_ids])
-            #bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
-            #    [target_bbox, target_class_ids, mrcnn_bbox])
-            #mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
-            #    [target_mask, target_class_ids, mrcnn_mask])
 
             # Model
             inputs = [input_image, input_image_meta,
@@ -2352,31 +2289,8 @@ class MN():
             outputs = [mn_class_logits, mn_bbox, mn_rois, mn_class_loss, mn_bbox_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
-            # Network Heads
-            # Proposal classifier and BBox regressor heads
-            #mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-            #    fpn_classifier_graph(rpn_rois, mrcnn_feature_maps, input_image_meta,
-            #                         config.POOL_SIZE, config.NUM_CLASSES,
-            #                         train_bn=config.TRAIN_BN,
-            #                         fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
-
-            # Detections
-            # output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in
-            # normalized coordinates
-            print("mn_rois.shape:", mn_rois.shape)
-            detections = DetectionLayer(config, name="mn_detection")(
-                [mn_rois, mn_probs, mn_bbox, input_image_meta])
-
-            # Create masks for detections
-            #detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
-            #mrcnn_mask = build_fpn_mask_graph(detection_boxes, mrcnn_feature_maps,
-            #                                  input_image_meta,
-            #                                  config.MASK_POOL_SIZE,
-            #                                  config.NUM_CLASSES,
-            #                                  train_bn=config.TRAIN_BN)
-
             model = KM.Model([input_image, input_image_meta, input_anchors],
-                            [detections, mn_rois, mn_probs, mn_bbox],
+                            [mn_rois, mn_probs, mn_bbox],
                             name='mask_rcnn')
         return model
 
@@ -2462,20 +2376,6 @@ class MN():
         """
         assert self.mode == "training", "Create model in training mode."
 
-        # Pre-defined layer regular expressions
-        #layer_regex = {
-        #    # all layers but the backbone
-        #    "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-        #    # From a specific Resnet stage and up
-        #    "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-        #    "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-        #    "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            # All layers
-        #    "all": ".*",
-        #}
-        #if layers in layer_regex.keys():
-        #    layers = layer_regex[layers]
-
         # Data generators
         train_generator = mn_generator(train_dataset, self.config, shuffle=True,
                                          augmentation=augmentation,
@@ -2531,7 +2431,7 @@ class MN():
         )
         self.epoch = max(self.epoch, epochs)
 
-    def unmold_detections(self, detections, original_image_shape,
+    def unmold_detections(self, mn_rois, original_image_shape,
                           image_shape, window):
         """Reformats the detections of one image from the format of the neural
         network output to a format suitable for use in the rest of the
@@ -2552,13 +2452,13 @@ class MN():
         """
         # How many detections do we have?
         # Detections array is padded with zeros. Find the first class_id == 0.
-        zero_ix = np.where(detections[:, 4] == 0)[0]
-        N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
+        #zero_ix = np.where(detections[:, 4] == 0)[0]
+        #N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
 
         # Extract boxes, class_ids, scores, and class-specific masks
-        boxes = detections[:N, :4]
-        class_ids = detections[:N, 4].astype(np.int32)
-        scores = detections[:N, 5]
+        boxes = mn_rois[:, :4]
+        #class_ids = detections[:N, 4].astype(np.int32)
+        #scores = detections[:N, 5]
         # new modify return probs:
         #probs = detections[:N,6:]
         #masks = mrcnn_mask[np.arange(N), :, :, class_ids]
@@ -2583,11 +2483,11 @@ class MN():
             (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]) <= 0)[0]
         if exclude_ix.shape[0] > 0:
             boxes = np.delete(boxes, exclude_ix, axis=0)
-            class_ids = np.delete(class_ids, exclude_ix, axis=0)
-            scores = np.delete(scores, exclude_ix, axis=0)
+            #class_ids = np.delete(class_ids, exclude_ix, axis=0)
+            #scores = np.delete(scores, exclude_ix, axis=0)
             #masks = np.delete(masks, exclude_ix, axis=0)
             #probs = np.delete(probs, exclude_ix, axis=0)
-            N = class_ids.shape[0]
+            #N = class_ids.shape[0]
 
         # Resize masks to original image size and set boundary threshold.
         #full_masks = []
@@ -2598,7 +2498,7 @@ class MN():
         #full_masks = np.stack(full_masks, axis=-1)\
         #    if full_masks else np.empty(original_image_shape[:2] + (0,))
 
-        return boxes, class_ids, scores#, masks#, probs
+        return boxes#, class_ids, scores#, masks#, probs
 
 
     def detect(self, images, verbose=0):
@@ -2643,19 +2543,19 @@ class MN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, _ =\
+        mn_rois, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
         # Process detections
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores =\
-                self.unmold_detections(detections[i],
+            final_rois =\
+                self.unmold_detections(mn_rois[i],
                                        image.shape, molded_images[i].shape,
                                        windows[i])
             results.append({
                 "rois": final_rois,
-                "class_ids": final_class_ids,
-                "scores": final_scores,
+                #"class_ids": final_class_ids,
+                #"scores": final_scores,
                 #"masks": masks,
                 #"probs": probs
             })
