@@ -522,12 +522,12 @@ if __name__ == '__main__':
     # Validate arguments
     if args.command == "train":
         assert args.dataset, "Argument --dataset is required for training"
-        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
-        #CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
+        #CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
+        CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
     elif args.command == "detect" or args.command == "evaluate":
         assert args.subset, "Provide --subset to run prediction on"
-        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
-        # CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+        #CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
+        CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
     if args.subset:
