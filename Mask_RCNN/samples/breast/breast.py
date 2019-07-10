@@ -114,7 +114,7 @@ class BreastConfig(Config):
 
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 1000 
-    POST_NMS_ROIS_INFERENCE = 2000
+    POST_NMS_ROIS_INFERENCE = 5
 
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
@@ -407,21 +407,22 @@ def detect(model, dataset_dir, subset):
         # image = skimage.color.rgb2gray(image)
         # Encode image to RLE. Returns a string of multiple lines
         source_id = dataset.image_info[image_id]["id"]
-        rle = mask_to_rle(source_id, r["masks"], r["scores"])
+        #rle = mask_to_rle(source_id, r["masks"], r["scores"])
         submission.append(rle)
         # Save image with masks
-        visualize.display_instances(
-             image, r['rois'], r['masks'], r['class_ids'],
-            dataset.class_names, r['scores'],
-            show_bbox=True, show_mask=True,
-            title="Predictions")
+        visualize.draw_boxes(image, r['rois'],title="MN")
+        #visualize.display_instances(
+        #     image, r['rois'], r['masks'], r['class_ids'],
+        #    dataset.class_names, r['scores'],
+        #    show_bbox=True, show_mask=True,
+        #    title="Predictions")
         plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]))
 
     # Save to csv file
-    submission = "ImageId,EncodedPixels\n" + "\n".join(submission)
-    file_path = os.path.join(submit_dir, "submit.csv")
-    with open(file_path, "w") as f:
-        f.write(submission)
+    #submission = "ImageId,EncodedPixels\n" + "\n".join(submission)
+    #file_path = os.path.join(submit_dir, "submit.csv")
+    #with open(file_path, "w") as f:
+    #    f.write(submission)
     print("Saved to ", submit_dir)
 
 ############################################################
@@ -567,17 +568,19 @@ if __name__ == '__main__':
         else:
             weights_path = args.weights
 
+
+
     # Load weights
-    #print("Loading weights ", weights_path)
-        if args.weights.lower() == "coco":
+    print("Loading weights ", weights_path)
+    if args.weights.lower() == "coco":
         # Exclude the last layers because they require a matching
         # number of classes
-            model.load_weights(weights_path, by_name=True, exclude=[
-                "mrcnn_class_logits", "mrcnn_bbox_fc",
-                "mrcnn_bbox", "mrcnn_mask"])
-        else:
-            model.load_weights(weights_path, by_name=True)
-
+        model.load_weights(weights_path, by_name=True, exclude=[
+            "mrcnn_class_logits", "mrcnn_bbox_fc",
+            "mrcnn_bbox", "mrcnn_mask"])
+    else:
+        model.load_weights(weights_path, by_name=True)
+        
     # Train or evaluate
     if args.command == "train":
         train(model, args.dataset, args.subset)
@@ -587,4 +590,5 @@ if __name__ == '__main__':
         evaluate(model, args.dataset, args.subset, config)
     else:
         print("'{}' is not recognized. "
-              "Use 'train' or 'detect'".format(args.command))
+                "Use 'train' or 'detect'".format(args.command))
+                                                                                                                                
