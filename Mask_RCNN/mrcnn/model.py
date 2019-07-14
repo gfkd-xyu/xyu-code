@@ -2155,7 +2155,10 @@ def mn_graph(input_image, anchor_stride):
     shared = KL.Conv2D(128, (3, 3), padding='same', activation='relu',
                        strides=2, name='mn_conv4_shared')(shared)
 
-    shared = KL.MaxPooling2D(pool_size=(4, 4), name="mn_pool_shared")(shared)
+    #shared = KL.Conv2D(64, (3, 3), padding='same', activation='relu',
+    #                   strides=2, name='mn_conv5_shared')(shared)
+
+    shared = KL.MaxPooling2D(pool_size=(2, 2), name="mn_pool_shared")(shared)
 
 
     # Anchor Score. [batch, height, width, anchors per location * 2].

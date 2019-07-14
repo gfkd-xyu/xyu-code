@@ -114,14 +114,14 @@ class BreastConfig(Config):
 
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 1000 
-    POST_NMS_ROIS_INFERENCE = 5
+    POST_NMS_ROIS_INFERENCE = 2000
 
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
     # RPN_NMS_THRESHOLD = 0.9
 
     # How many anchors per image to use for RPN training
-    RPN_TRAIN_ANCHORS_PER_IMAGE = 64
+    RPN_TRAIN_ANCHORS_PER_IMAGE = 256
     
     # Grayscale images
     # IMAGE_CHANNEL_COUNT = 1
@@ -145,7 +145,7 @@ class BreastConfig(Config):
 
     # Max number of final detections per image
     DETECTION_MAX_INSTANCES = 7
-    LEARNING_RATE = 0.0001
+    LEARNING_RATE = 0.001
 
     # MN config
     MN_SCALE = [256]
@@ -195,7 +195,7 @@ class BreastDataset(utils.Dataset):
         if subset == "test":
             image_ids = []
             for d in os.listdir(dataset_dir):
-                _,p, p_id, rl, iv = d.split("_")
+                _, p, p_id, rl, iv = d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
                     # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
                     #        (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values[0]
@@ -207,6 +207,7 @@ class BreastDataset(utils.Dataset):
         else:
             x=[]
             for d in os.listdir(dataset_dir):
+                if d.startswith("."): continue
                 _, p, p_id, rl, iv=d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
                    # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
@@ -394,7 +395,7 @@ def detect(model, dataset_dir, subset):
     dataset.load_breast(dataset_dir, subset)
     dataset.prepare()
     # Load over images
-    submission = []
+    #submission = []
     for image_id in dataset.image_ids:
         # Load image and run detection
         image = dataset.load_image(image_id)
@@ -406,9 +407,9 @@ def detect(model, dataset_dir, subset):
         r = model.detect([image], verbose=0)[0]
         # image = skimage.color.rgb2gray(image)
         # Encode image to RLE. Returns a string of multiple lines
-        source_id = dataset.image_info[image_id]["id"]
+        #source_id = dataset.image_info[image_id]["id"]
         #rle = mask_to_rle(source_id, r["masks"], r["scores"])
-        submission.append(rle)
+        #submission.append(rle)
         # Save image with masks
         visualize.draw_boxes(image, r['rois'],title="MN")
         #visualize.display_instances(
@@ -523,12 +524,12 @@ if __name__ == '__main__':
     # Validate arguments
     if args.command == "train":
         assert args.dataset, "Argument --dataset is required for training"
-        #CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
-        CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_train_set.csv"
+        #CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
     elif args.command == "detect" or args.command == "evaluate":
         assert args.subset, "Provide --subset to run prediction on"
-        #CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
-        CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
+        #CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
     if args.subset:
@@ -570,16 +571,16 @@ if __name__ == '__main__':
 
 
 
-    # Load weights
-    print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
-        # Exclude the last layers because they require a matching
-        # number of classes
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
-    else:
-        model.load_weights(weights_path, by_name=True)
+        # Load weights
+        #print("Loading weights ", weights_path)
+        if args.weights.lower() == "coco":
+           # Exclude the last layers because they require a matching
+            # number of classes
+            model.load_weights(weights_path, by_name=True, exclude=[
+                "mrcnn_class_logits", "mrcnn_bbox_fc",
+                "mrcnn_bbox", "mrcnn_mask"])
+        else:
+            model.load_weights(weights_path, by_name=True)
         
     # Train or evaluate
     if args.command == "train":
