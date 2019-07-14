@@ -2266,14 +2266,16 @@ class MN():
         # Generate proposals
         # Proposals are [batch, N, (y1, x1, y2, x2)] in normalized coordinates
         # and zero padded.
+        print(anchors.shape)
         proposal_count = config.POST_NMS_ROIS_TRAINING if mode == "training"\
             else config.POST_NMS_ROIS_INFERENCE
+        print(proposal_count)
         mn_rois = ProposalLayer(
             proposal_count=proposal_count,
             nms_threshold=config.RPN_NMS_THRESHOLD,
             name="ROI",
             config=config)([mn_probs, mn_bbox, anchors])
-        
+        print(mn_rois.shape)
         if mode == "training":
             # Losses
             mn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="mn_class_loss")(
