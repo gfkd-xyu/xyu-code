@@ -208,9 +208,10 @@ class MyModel1(tf.keras.Model):
         self.dense0 =tf.keras.layers.Dense(4096, activation='relu', name='fc1')
         self.dense1 =tf.keras.layers.Dense(100, activation='relu', name='fc2')
         self.dense = tf.keras.layers.Dense(classes, activation='sigmoid')
+        self.keras_model = self.build(config)
         #self.resnet = resnet_graph("resnet50",stage5=True)
     
-    def call(self, inputs):
+    def build(self, config):
         #x = self.conv0(inputs)
         #x = self.act0(x)
         #x = self.mpl0(x)
@@ -219,7 +220,7 @@ class MyModel1(tf.keras.Model):
         #x = self.act1(x)
         #x = self.mpl1(x)
         #x = self.load_resnet(x)
-        
+        inputs = layers.Input(shape=[config.IMAGE_DIM, config.IMAGE_DIM, 3])
         x = self.vgg(inputs)
         #x = self.gap(x)
         x = self.flt(x)
@@ -228,21 +229,65 @@ class MyModel1(tf.keras.Model):
         x = self.dense1(x)
         x = layers.Dropout(0.5)(x)
         x = self.dense(x)
-        return x
+        model = tf.keras.Model(inputs,x)
+        return model
     
     def load_vgg(self):
         vgg = tf.keras.applications.VGG19(include_top=False, weights='imagenet', 
                 input_tensor=tf.keras.Input(shape=(Config.IMAGE_DIM, Config.IMAGE_DIM, 3)))
-        vgg.trainable = True
+        #vgg.trainable = True
         return vgg
 
 
     def load_resnet(self):
         resnet50 = tf.keras.applications.ResNet50(
             include_top=False, weights='imagenet', input_tensor=tf.keras.Input(shape=(Config.IMAGE_DIM, Config.IMAGE_DIM, 3)))
-        resnet50.trainable = True
+        #resnet50.trainable = True
         return resnet50
 
+    def train(self, train_dataset, trainable=False, ctid, epochs):
+        now = datetime.datetime.now()
+        model_dir = os.path.join('/backup/yuxin/Mask_RCNN/aortaPy/weights','{}'.format(ctid))
+        log_dir = os.path.join(model_dir, "{:%Y%m%dT%H%M}".format(now))
+        checkpoint_path = os.path.join(log_dir, "aorta_*epoch*.h5")
+        checkpoint_path = checkpoint_path.replace("*epoch*", "{epoch:04d}")
+
+        callbacks_list = [
+                tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=0, write_graph=True, write_images=False),
+                tf.keras.callbacks.ModelCheckpoint(checkpoint_path, verbose=0, save_weights_only=True)]
+
+        log("\nStarting at epoch {}. LR={}\n".format(self.epoch, learning_rate))
+        log("Checkpoint Path: {}".format(self.checkpoint_path))
+        self.vgg.trainable = trainable
+
+        self.keras_model.compile(optimizer=tf.keras.optimizers.SGD(learing_rate=0.001),
+                loss="binary_crossentyopy",
+                metrics=['accuracy'])
+
+        self.keras_model.fit(
+                train_dataset,
+                initial_epoch=self.epoch,
+                epochs=epochs,
+                callbacks=callbacks_list,
+                workers=8,
+                use_multiprocessing=True
+                )
+        self.epoch = max(self.epoch, epochs)
+
+def log(text, array=None):
+    """Prints a text message. And, optionally, if a Numpy array is provided it
+    prints it's shape, min, and max values.
+    """""
+    if array is not None:
+        text = text.ljust(25)
+        text += ("shape: {:20}  ".format(str(array.shape)))
+        if array.size:
+            text += ("min: {:10.5f}  max: {:10.5f}".format(array.min(),array.max()))
+        else:
+            text += ("min: {:10}  max: {:10}".format("",""))
+        text += "  {}".format(array.dtype)
+    print(text)
+    
 
 def DepthwiseNet(input_tensor=None, input_shape=None, classes=2, **kwargs):
 
