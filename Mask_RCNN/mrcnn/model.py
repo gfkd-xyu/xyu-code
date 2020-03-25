@@ -3204,8 +3204,8 @@ class MaskRCNN():
             validation_data=val_generator,
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=50,
-            workers=1,
-            use_multiprocessing=False,
+            workers=workers,
+            use_multiprocessing=True
         )
         self.epoch = max(self.epoch, epochs)
 
@@ -3315,7 +3315,7 @@ class MaskRCNN():
         full_masks = np.stack(full_masks, axis=-1)\
             if full_masks else np.empty(original_image_shape[:2] + (0,))
 
-        return boxes, class_ids, scores, masks#, probs
+        return boxes, class_ids, scores, full_masks#, probs
 
     def detect(self, images, verbose=0):
         """Runs the detection pipeline.
@@ -3339,7 +3339,7 @@ class MaskRCNN():
 
         # Mold inputs to format expected by the neural network
         molded_images, image_metas, windows = self.mold_inputs(images)
-
+        #print(images.shape,windows.shape)
         # Validate image sizes
         # All images in a batch MUST be of the same size
         image_shape = molded_images[0].shape
@@ -3363,10 +3363,11 @@ class MaskRCNN():
         # Process detections
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores, masks, probs =\
+            final_rois, final_class_ids, final_scores, masks =\
                 self.unmold_detections(detections[i], mrcnn_mask[i],
                                        image.shape, molded_images[i].shape,
                                        windows[i])
+            print(masks.shape)
             results.append({
                 "rois": final_rois,
                 "class_ids": final_class_ids,

@@ -92,7 +92,7 @@ class BreastConfig(Config):
 
     # Don't exclude based on confidence. Since we have two classes
     # then 0.5 is the minimum anyway as it picks between nucleus and BG
-    DETECTION_MIN_CONFIDENCE = 0.5
+    DETECTION_MIN_CONFIDENCE = 0.7
 
     # Backbone network architecture
     # Supported values are: resnet50, resnet101
@@ -107,8 +107,8 @@ class BreastConfig(Config):
     IMAGE_MIN_SCALE = 0
 
     # Length of square anchor side in pixels
-    #RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)
-    RPN_ANCHOR_SCALES = (32,64,128,256,512)
+    RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)
+    #RPN_ANCHOR_SCALES = (32,64,128,256,512)
 
     # ROIs kept after non-maximum supression (training and inference)
     POST_NMS_ROIS_TRAINING = 1000 
@@ -155,7 +155,8 @@ class BreastInferenceConfig(BreastConfig):
     # You can increase this during training to generate more propsals.
     RPN_NMS_THRESHOLD = 0.5
     DETECTION_MIN_CONFIDENCE = 0.5
-
+    DETECTION_MAX_INSTANCES = 2
+  
 ############################################################
 #  Dataset
 ############################################################
@@ -304,7 +305,7 @@ def train(model, dataset_dir, subset):
     print("Train network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=20,
+                epochs=50,
                 augmentation=augmentation,
                 layers='heads')
 
@@ -355,6 +356,7 @@ def rle_decode(rle, shape):
 
 def mask_to_rle(image_id, mask, scores):
     "Encodes instance masks to submission format."
+    #print(mask.shape)
     assert mask.ndim == 3, "Mask must be [H, W, count]"
     # If mask is empty, return line with image ID only
     if mask.shape[-1] == 0:
@@ -409,16 +411,18 @@ def detect(model, dataset_dir, subset):
         # image = skimage.color.rgb2gray(image)
         # Encode image to RLE. Returns a string of multiple lines
         source_id = dataset.image_info[image_id]["id"]
-        rle = mask_to_rle(source_id, r["masks"], r["scores"])
-        submission.append(rle)
+        try:
+            rle = mask_to_rle(source_id, r["masks"], r["scores"])
+            submission.append(rle)
         # Save image with masks
-        print(dataset.image_info[image_id]["id"])
-        visualize.display_instances(
-            image, r['rois'], r['masks'], r['class_ids'],
-            dataset.class_names, r['scores'],
-            show_bbox=True, show_mask=True,
-            title="Predictions")
-        plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]))
+            visualize.display_instances(
+                image, r['rois'], r['masks'], r['class_ids'],
+                dataset.class_names, r['scores'],
+                show_bbox=True, show_mask=False,
+                title="Predictions")
+            plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]))
+        except:
+            print(dataset.image_info[image_id]["id"])
 
     # Save to csv file
     submission = "ImageId,EncodedPixels\n" + "\n".join(submission)
@@ -499,6 +503,7 @@ def evaluate(model, dataset_dir, subset, config):
 
     image_ids = dataset.image_ids
     APs = []
+    all_recalls = []
     for image_id in image_ids:
         # Load image and ground truth data
         image, image_meta, gt_class_id, gt_bbox, gt_mask = \
@@ -513,7 +518,7 @@ def evaluate(model, dataset_dir, subset, config):
         #try:
         AP, precisions, recalls, overlaps =\
                     utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
-                            r["rois"], r["class_ids"], r["scores"], r['masks'], iou_threshold=0.4)
+                            r["rois"], r["class_ids"], r["scores"], r['masks'], iou_threshold=0.2)
         #except:
         #    print(image_id,dataset.image_info[image_id]["id"])
         #    print(gt_mask.shape,r['masks'].shape)
@@ -522,12 +527,13 @@ def evaluate(model, dataset_dir, subset, config):
         #print(AP,dataset.image_info[image_id]["id"])
         if AP==0:
             if not len(overlaps) : continue 
-            print(np.amax(overlaps),dataset.image_info[image_id]["id"][12:])
+        #    print(np.amax(overlaps),dataset.image_info[image_id]["id"][12:])
         APs.append(AP)
-        #recallss.append(recalls)
+        all_recalls.append(recalls)
+        print(recalls)
         #   overlapss.append(overlaps)
     print("mAP: ", np.mean(APs))
-    #print("recall: ", recallss)
+    print("recall: ", np.mean(all_recalls))
     #print("overlap: ", np.mean(overlapss))
 
 ############################################################
