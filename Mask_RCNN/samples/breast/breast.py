@@ -104,8 +104,8 @@ class BreastConfig(Config):
     # Input image resizing
     # Random crops of size 512x512
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 4096 
-    IMAGE_MAX_DIM = 4096
+    IMAGE_MIN_DIM = 512 
+    IMAGE_MAX_DIM = 512
     IMAGE_CHANNEL_COUNT = 3
     IMAGE_MIN_SCALE = 0
 
@@ -121,7 +121,7 @@ class BreastConfig(Config):
     # RPN_NMS_THRESHOLD = 0.9
 
     # How many anchors per image to use for RPN training
-    RPN_TRAIN_ANCHORS_PER_IMAGE = 64
+    RPN_TRAIN_ANCHORS_PER_IMAGE = 256
     
     # Grayscale images
     # IMAGE_CHANNEL_COUNT = 1
@@ -145,7 +145,11 @@ class BreastConfig(Config):
 
     # Max number of final detections per image
     DETECTION_MAX_INSTANCES = 7
-    LEARNING_RATE = 0.0001
+    LEARNING_RATE = 0.001
+
+    # MN config
+    MN_SCALE = [256]
+    MN_BACKBONE = np.array([[128,128]])
 
 class BreastInferenceConfig(BreastConfig):
     # Set batch size to 1 to run one image at a time
@@ -157,6 +161,10 @@ class BreastInferenceConfig(BreastConfig):
     # You can increase this during training to generate more propsals.
     RPN_NMS_THRESHOLD = 0.7
     DETECTION_MIN_CONFIDENCE = 0.6
+        # MN config
+    MN_SCALE = [256]
+    MN_BACKBONE = np.array([[128,128]])
+
 
 ############################################################
 #  Dataset
@@ -187,7 +195,7 @@ class BreastDataset(utils.Dataset):
         if subset == "test":
             image_ids = []
             for d in os.listdir(dataset_dir):
-                _,p, p_id, rl, iv = d.split("_")
+                _, p, p_id, rl, iv = d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
                     # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
                     #        (df['image view']==iv)&(df['abnormality id']==int(f[0]))]['pathology'].values[0]
@@ -199,6 +207,7 @@ class BreastDataset(utils.Dataset):
         else:
             x=[]
             for d in os.listdir(dataset_dir):
+                if d.startswith("."): continue
                 _, p, p_id, rl, iv=d.split("_")
                 for f in os.listdir(os.path.join(dataset_dir,d,"masks")):
                    # x = df[(df['patient_id']=="P_"+p_id)&(df['left or right breast']==rl)&
@@ -386,7 +395,7 @@ def detect(model, dataset_dir, subset):
     dataset.load_breast(dataset_dir, subset)
     dataset.prepare()
     # Load over images
-    submission = []
+    #submission = []
     for image_id in dataset.image_ids:
         # Load image and run detection
         image = dataset.load_image(image_id)
@@ -398,22 +407,23 @@ def detect(model, dataset_dir, subset):
         r = model.detect([image], verbose=0)[0]
         # image = skimage.color.rgb2gray(image)
         # Encode image to RLE. Returns a string of multiple lines
-        source_id = dataset.image_info[image_id]["id"]
-        rle = mask_to_rle(source_id, r["masks"], r["scores"])
-        submission.append(rle)
+        #source_id = dataset.image_info[image_id]["id"]
+        #rle = mask_to_rle(source_id, r["masks"], r["scores"])
+        #submission.append(rle)
         # Save image with masks
-        visualize.display_instances(
-             image, r['rois'], r['masks'], r['class_ids'],
-            dataset.class_names, r['scores'],
-            show_bbox=True, show_mask=True,
-            title="Predictions")
+        visualize.draw_boxes(image, r['rois'],title="MN")
+        #visualize.display_instances(
+        #     image, r['rois'], r['masks'], r['class_ids'],
+        #    dataset.class_names, r['scores'],
+        #    show_bbox=True, show_mask=True,
+        #    title="Predictions")
         plt.savefig("{}/{}.png".format(submit_dir, dataset.image_info[image_id]["id"]))
 
     # Save to csv file
-    submission = "ImageId,EncodedPixels\n" + "\n".join(submission)
-    file_path = os.path.join(submit_dir, "submit.csv")
-    with open(file_path, "w") as f:
-        f.write(submission)
+    #submission = "ImageId,EncodedPixels\n" + "\n".join(submission)
+    #file_path = os.path.join(submit_dir, "submit.csv")
+    #with open(file_path, "w") as f:
+    #    f.write(submission)
     print("Saved to ", submit_dir)
 
 ############################################################
@@ -518,8 +528,13 @@ if __name__ == '__main__':
         CSV_DIR = "/backup/yuxin/mass_case_description_train_set.csv"
     elif args.command == "detect" or args.command == "evaluate":
         assert args.subset, "Provide --subset to run prediction on"
+<<<<<<< HEAD
         #CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
         CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+=======
+        CSV_DIR = "/Users/nikki/Documents/CBIS-DDSM/mass_case_description_test_set.csv"
+        #CSV_DIR = "/backup/yuxin/mass_case_description_test_set.csv"
+>>>>>>> ce6b903f3b708f9f8582cb18f4d88810f740c4f6
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
     if args.subset:
@@ -543,32 +558,35 @@ if __name__ == '__main__':
         #                          model_dir=args.logs)
         model = modellib.MN(mode="inference", config=config, model_dir=args.logs)
 
+    if args.weights is not None:
     # Select weights file to load
-    if args.weights.lower() == "coco":
-        weights_path = COCO_WEIGHTS_PATH
+        if args.weights.lower() == "coco":
+            weights_path = COCO_WEIGHTS_PATH
         # Download weights file
-        if not os.path.exists(weights_path):
-            utils.download_trained_weights(weights_path)
-    elif args.weights.lower() == "last":
+            if not os.path.exists(weights_path):
+                utils.download_trained_weights(weights_path)
+        elif args.weights.lower() == "last":
         # Find last trained weights
-        weights_path = model.find_last()
-    elif args.weights.lower() == "imagenet":
+            weights_path = model.find_last()
+        elif args.weights.lower() == "imagenet":
         # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
-    else:
-        weights_path = args.weights
+            weights_path = model.get_imagenet_weights()
+        else:
+            weights_path = args.weights
 
-    # Load weights
-    #print("Loading weights ", weights_path)
-    #if args.weights.lower() == "coco":
-        # Exclude the last layers because they require a matching
-        # number of classes
-    #    model.load_weights(weights_path, by_name=True, exclude=[
-    #        "mrcnn_class_logits", "mrcnn_bbox_fc",
-    #        "mrcnn_bbox", "mrcnn_mask"])
-    #else:
-    #    model.load_weights(weights_path, by_name=True)
 
+
+        # Load weights
+        #print("Loading weights ", weights_path)
+        if args.weights.lower() == "coco":
+           # Exclude the last layers because they require a matching
+            # number of classes
+            model.load_weights(weights_path, by_name=True, exclude=[
+                "mrcnn_class_logits", "mrcnn_bbox_fc",
+                "mrcnn_bbox", "mrcnn_mask"])
+        else:
+            model.load_weights(weights_path, by_name=True)
+        
     # Train or evaluate
     if args.command == "train":
         train(model, args.dataset, args.subset)
@@ -578,4 +596,5 @@ if __name__ == '__main__':
         evaluate(model, args.dataset, args.subset, config)
     else:
         print("'{}' is not recognized. "
-              "Use 'train' or 'detect'".format(args.command))
+                "Use 'train' or 'detect'".format(args.command))
+                                                                                                                                

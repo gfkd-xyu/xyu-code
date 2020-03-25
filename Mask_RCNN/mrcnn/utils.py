@@ -270,6 +270,9 @@ def box_refinement(box, gt_box):
 
     return np.stack([dy, dx, dh, dw], axis=1)
 
+def normalize(img):
+        normalized_img = ((img - np.min(img))/(np.max(img) - np.min(img)))*255
+        return normalized_img.astype(np.float32)
 
 ############################################################
 #  Dataset
@@ -408,18 +411,17 @@ class Dataset(object):
         """
         return self.image_info[image_id]["path"]
     
-    def normalize(img):
-        normalized_img = ((img - np.min(img))/(np.max(img) - np.min(img)))*255
-        return normalized_img
-
+   
     def load_image(self, image_id):
         """Load the specified image and return a [H,W,3] Numpy array.
         """
         # Load image
         image = cv2.imread(self.image_info[image_id]['path'], cv2.IMREAD_ANYDEPTH)
+        #print(image.shape)
         #image = (image - np.min(image))/(np.max(image)-np.min(image)) * 255
+        #image = image.astype(np.float32)
         #image = cv2.equalizeHist(image)
-        #image = normalize(image)
+        image = normalize(image)
         # ds = sitk.ReadImage(self.image_info[image_id]['path'])
         # image = sitk.GetArrayFromImage(ds)
         # image = np.squeeze(image)

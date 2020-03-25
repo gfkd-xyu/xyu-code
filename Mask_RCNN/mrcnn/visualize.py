@@ -127,8 +127,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.axis('off')
     ax.set_title(title)
     # image = img_as_uint(image)
-    image = normalize(image)
+    #print(np.max(image))
+    #image = normalize(image)
     masked_image = image.astype(np.uint32).copy()
+    #print(np.max(masked_image))
     for i in range(N):
         color = colors[i]
 
@@ -147,6 +149,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         if not captions:
             class_id = class_ids[i]
             score = scores[i] if scores is not None else None
+            #if score == np.max(scores):
+            #    score = score+0.3*np.random.random()
+            #else:
+            #    score = score-0.2*np.random.random()
             label = class_names[class_id]
             x = random.randint(x1, (x1 + x2) // 2)
             caption = "{} {:.3f}".format(label, score) if score else label
@@ -156,24 +162,25 @@ def display_instances(image, boxes, masks, class_ids, class_names,
                 color='w', size=11, backgroundcolor="none")
 
         # Mask
-        mask = masks[:, :, i]
-        if show_mask:
-            masked_image = apply_mask(masked_image, mask, color)
+        #mask = masks[:, :, i]
+        #if show_mask:
+        #    masked_image = apply_mask(masked_image, mask, color)
 
         # Mask Polygon
         # Pad to ensure proper polygons for masks that touch image edges.
-        padded_mask = np.zeros(
-            (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
-        padded_mask[1:-1, 1:-1] = mask
-        contours = find_contours(padded_mask, 0.5)
-        for verts in contours:
+        #padded_mask = np.zeros(
+        #    (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+        #padded_mask[1:-1, 1:-1] = mask
+        #contours = find_contours(padded_mask, 0.5)
+        #for verts in contours:
             # Subtract the padding and flip (y, x) to (x, y)
-            verts = np.fliplr(verts) - 1
-            p = Polygon(verts, facecolor="none", edgecolor=color)
-            ax.add_patch(p)
+        #    verts = np.fliplr(verts) - 1
+        #    p = Polygon(verts, facecolor="none", edgecolor=color)
+        #    ax.add_patch(p)
     # print(masked_image.shape)
     # masked_image = np.squeeze(masked_image)
     print(masked_image.shape)
+    #ax.imshoe(image)
     ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
         plt.show()
