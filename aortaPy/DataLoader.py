@@ -56,10 +56,10 @@ class Dataset(object):
 
     def load_image(self, image_id):
         path = self.image_info[image_id][1]
-        ds = pydicom.read_file(path)
-        img = ds.pixel_array
-        if img.ndim != 3:
-            img = sc.gray2rgb(img)
+        ds = sitk.ReadImage(path)
+        img = sitk.GetArrayFromImage(ds)[0]
+        #if img.ndim != 3:
+        #    img = sc.gray2rgb(img)
         #img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         return img, self.image_info[image_id][2]
 
