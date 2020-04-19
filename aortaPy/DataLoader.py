@@ -232,6 +232,7 @@ class Dataset_png(object):
         path = self.case_info[case_id][0]
         if augmentation is not None: det = augmentation.to_deterministic()
         #for i in os.listdir(path):
+        #cont = 0
         for i in range(1,15):
             xml_file = os.path.join(anno_path, str(i), str(class_id), cid+".xml")
             #print(xml_file)
@@ -256,7 +257,8 @@ class Dataset_png(object):
             if augmentation is not None: 
                 m = det.augment_image(m)
                 bbs_aug = det.augment_bounding_boxes(bbs_aug)
-            bboxes = np.zera([len(all_boxes), 4],dtype=np.int32)
+            bboxes = np.zeros([4, 4],dtype=np.int32)
+            #cont = max(cont, len(all_boxes))
             for j in range(len(bbs_aug.bounding_boxes)):
                 n_x1 = bbs_aug.bounding_boxes[j].x1
                 n_y1 = bbs_aug.bounding_boxes[j].y1
@@ -267,6 +269,7 @@ class Dataset_png(object):
             case_anno.append(bboxes.astype(np.int32))
         #case = np.stack(case,axis=-1)
         #case = np.expand_dims(case,axis=-1)
+        #print(cont)
         return attr, np.array(case), np.array(case_anno), self.case_info[case_id][1]
     
     #def prepare(self):
