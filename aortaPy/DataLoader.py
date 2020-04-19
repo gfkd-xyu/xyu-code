@@ -256,16 +256,15 @@ class Dataset_png(object):
             if augmentation is not None: 
                 m = det.augment_image(m)
                 bbs_aug = det.augment_bounding_boxes(bbs_aug)
-            bboxes = []
-            for b in bbs_aug.bounding_boxes:
-                n_x1 = b.x1
-                n_y1 = b.y1
-                n_x2 = b.x2
-                n_y2 = b.y2
-                bboxes.append((n_x1, n_y1, n_x2, n_y2))
-            #bboxes = np.array(bboxes)
+            bboxes = np.zera([len(all_boxes), 4],dtype=np.int32)
+            for j in range(len(bbs_aug.bounding_boxes)):
+                n_x1 = bbs_aug.bounding_boxes[j].x1
+                n_y1 = bbs_aug.bounding_boxes[j].y1
+                n_x2 = bbs_aug.bounding_boxes[j].x2
+                n_y2 = bbs_aug.bounding_boxes[j].y2
+                bboxes[j] = np.array([n_y1, n_x1, n_y2, n_x2])
             case.append(m)
-            case_anno.append(bboxes)
+            case_anno.append(bboxes.astype(np.int32))
         #case = np.stack(case,axis=-1)
         #case = np.expand_dims(case,axis=-1)
         return attr, np.array(case), np.array(case_anno), self.case_info[case_id][1]
