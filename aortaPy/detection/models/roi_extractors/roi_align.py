@@ -1,93 +1,78 @@
 import tensorflow as tf
 
 from config import Config
-from detection.utils.misc import *
+def log2_graph(x):
+    """Implementation of Log2. TF doesn't have a native implementation."""
+    return tf.math.log(x) / tf.math.log(2.0)
+
 
 class PyramidROIAlign(tf.keras.layers.Layer):
+    """Implements ROI Pooling on multiple levels of the feature pyramid.
+
+    Params:
+    - pool_shape: [pool_height, pool_width] of the output pooled regions. Usually [7, 7]
+
+    Inputs:
+    - boxes: [batch, num_boxes, (y1, x1, y2, x2)] in normalized
+             coordinates. Possibly padded with zeros if not enough
+             boxes to fill the array.
+    - image_meta: [batch, (meta data)] Image details. See compose_image_meta()
+    - feature_maps: List of feature maps from different levels of the pyramid.
+                    Each is [batch, height, width, channels]
+
+    Output:
+    Pooled regions in the shape: [batch, num_boxes, pool_height, pool_width, channels].
+    The width and height are those specific in the pool_shape in the layer
+    constructor.
+    """
 
     def __init__(self, pool_shape, **kwargs):
-        '''
-        Implements ROI Pooling on multiple levels of the feature pyramid.
-
-        Attributes
-        ---
-            pool_shape: (height, width) of the output pooled regions.
-                Example: (7, 7)
-        '''
         super(PyramidROIAlign, self).__init__(**kwargs)
-
         self.pool_shape = tuple(pool_shape)
 
-    def call(self, inputs, training=True):
-        '''
-        Args
-        ---
-            rois_list: list of [num_rois, (y1, x1, y2, x2)] in normalized coordinates.
-            feature_map_list: List of [batch, height, width, channels].
-                feature maps from different levels of the pyramid.
-            #img_metas: [batch_size, 11]
+    def call(self, inputs):
+        # Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
+        boxes = inputs[0]
 
-        Returns
-        ---
-            pooled_rois_list: list of [num_rois, pooled_height, pooled_width, channels].
-                The width and height are those specific in the pool_shape in the layer
-                constructor.
-        '''
-        rois_list, feature_map_list = inputs # [2000 ,4], list:[P2, P3, P4, P5]
+        # Image meta
+        # Holds details about the image. See compose_image_meta()
+        #image_meta = inputs[1]
 
-        #pad_shapes = calc_pad_shapes(img_metas)
-        
-        #pad_areas = pad_shapes[:, 0] * pad_shapes[:, 1] # 1216*1216
-        
-        num_rois_list = [rois.shape.as_list()[0] for rois in rois_list] # data:[2000]
-        roi_indices = tf.constant(
-            [i for i in range(len(rois_list)) for _ in range(rois_list[i].shape.as_list()[0])],
-            dtype=tf.int32
-        ) #[0.....], shape:[2000]
-        
-        #areas = tf.constant(#              range(1)                               range(2000)
-        #    [pad_areas[i] for i in range(pad_areas.shape[0]) for _ in range(num_rois_list[i])],
-        #    dtype=tf.float32
-        #)#[1216*1216, 1216*1216,...], shape:[2000]
-        areas = Config.IMAGE_DIM*Config.IMAGE_DIM
+        # Feature Maps. List of feature maps from different level of the
+        # feature pyramid. Each is [batch, height, width, channels]
+        feature_maps = inputs[1:]
 
-
-        rois = tf.concat(rois_list, axis=0) # [2000, 4]
-        
         # Assign each ROI to a level in the pyramid based on the ROI area.
-        y1, x1, y2, x2 = tf.split(rois, 4, axis=1) # 4 of [2000, 1]
-        h = y2 - y1 # [2000, 1]
-        w = x2 - x1 # [2000, 1]
-        
+        y1, x1, y2, x2 = tf.split(boxes, 4, axis=2)
+        h = y2 - y1
+        w = x2 - x1
+        # Use shape of first image. Images in a batch must have the same size.
+        #image_shape = parse_image_meta_graph(image_meta)['image_shape'][0]
         # Equation 1 in the Feature Pyramid Networks paper. Account for
         # the fact that our coordinates are normalized here.
         # e.g. a 224x224 ROI (in pixels) maps to P4
-
-        roi_level = tf.math.log( # [2000]
-                    tf.sqrt(tf.squeeze(h * w, 1))
-                    / tf.cast((224.0 / tf.sqrt(areas * 1.0)), tf.float32)
-                    ) / tf.math.log(2.0)
-        roi_level = tf.minimum(5, tf.maximum( # [2000], clamp to [2-5]
+        image_area = tf.cast(Config.IMAGE_DIM*Config.IMAGE_DIM, tf.float32)
+        roi_level = log2_graph(tf.sqrt(h * w) / (224.0 / tf.sqrt(image_area)))
+        roi_level = tf.minimum(5, tf.maximum(
             2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
-        # roi_level will indicates which level of feature to use
+        roi_level = tf.squeeze(roi_level, 2)
 
-        
         # Loop through levels and apply ROI pooling to each. P2 to P5.
-        pooled_rois = []
-        roi_to_level = []
-        for i, level in enumerate(range(2, 6)): # 2,3,4,5
-            ix = tf.where(tf.equal(roi_level, level)) # [1999, 1], means 1999 of 2000 select P2
-            level_rois = tf.gather_nd(rois, ix) # boxes to crop, [1999, 4]
+        pooled = []
+        box_to_level = []
+        for i, level in enumerate(range(2, 6)):
+            ix = tf.where(tf.equal(roi_level, level))
+            level_boxes = tf.gather_nd(boxes, ix)
 
-            # ROI indices for crop_and_resize.
-            level_roi_indices = tf.gather_nd(roi_indices, ix) # [19999], data:[0....0]
+            # Box indices for crop_and_resize.
+            box_indices = tf.cast(ix[:, 0], tf.int32)
 
-            # Keep track of which roi is mapped to which level
-            roi_to_level.append(ix)
+            # Keep track of which box is mapped to which level
+            box_to_level.append(ix)
 
             # Stop gradient propogation to ROI proposals
-            level_rois = tf.stop_gradient(level_rois)
-            level_roi_indices = tf.stop_gradient(level_roi_indices)
+            level_boxes = tf.stop_gradient(level_boxes)
+            box_indices = tf.stop_gradient(box_indices)
 
             # Crop and Resize
             # From Mask R-CNN paper: "We sample four regular locations, so
@@ -97,29 +82,34 @@ class PyramidROIAlign(tf.keras.layers.Layer):
             #
             # Here we use the simplified approach of a single value per bin,
             # which is how it's done in tf.crop_and_resize()
-            # Result: [batch * num_rois, pool_height, pool_width, channels]
-            pooled_rois.append(tf.image.crop_and_resize(
-                feature_map_list[i], level_rois, level_roi_indices, self.pool_shape,
-                method="bilinear")) # [1, 304, 304, 256], [1999, 4], [1999], [2]=[7,7]=>[1999,7,7,256]
-        # [1999, 7, 7, 256], [], [], [1,7,7,256] => [2000, 7, 7, 256]
+            # Result: [batch * num_boxes, pool_height, pool_width, channels]
+            pooled.append(tf.image.crop_and_resize(
+                feature_maps[i], level_boxes, box_indices, self.pool_shape,
+                method="bilinear"))
+
         # Pack pooled features into one tensor
-        pooled_rois = tf.concat(pooled_rois, axis=0)
+        pooled = tf.concat(pooled, axis=0)
 
-        # Pack roi_to_level mapping into one array and add another
-        # column representing the order of pooled rois
-        roi_to_level = tf.concat(roi_to_level, axis=0) # [2000, 1], 1999 of P2, and 1 other P
-        roi_range = tf.expand_dims(tf.range(tf.shape(roi_to_level)[0]), 1) # [2000, 1], 0~1999
-        roi_to_level = tf.concat([tf.cast(roi_to_level, tf.int32), roi_range],
-                                 axis=1) # [2000, 2], (P, range)
+        # Pack box_to_level mapping into one array and add another
+        # column representing the order of pooled boxes
+        box_to_level = tf.concat(box_to_level, axis=0)
+        box_range = tf.expand_dims(tf.range(tf.shape(box_to_level)[0]), 1)
+        box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range],
+                                 axis=1)
 
-        # Rearrange pooled features to match the order of the original rois
-        # Sort roi_to_level by batch then roi indextf.Tensor([        0    100001    200002 ... 199801997 199901998  20101999], shape=(2000,), dtype=int32)
+        # Rearrange pooled features to match the order of the original boxes
+        # Sort box_to_level by batch then box index
         # TF doesn't have a way to sort by two columns, so merge them and sort.
-        sorting_tensor = roi_to_level[:, 0] * 100000 + roi_to_level[:, 1]
-        ix = tf.nn.top_k(sorting_tensor, k=tf.shape( # k=2000
-            roi_to_level)[0]).indices[::-1]# reverse the order
-        ix = tf.gather(roi_to_level[:, 1], ix) # [2000]
-        pooled_rois = tf.gather(pooled_rois, ix) # [2000, 7, 7, 256]
-        # 2000 of [7, 7, 256]
-        pooled_rois_list = tf.split(pooled_rois, num_rois_list, axis=0)
-        return pooled_rois_list
+        sorting_tensor = box_to_level[:, 0] * 100000 + box_to_level[:, 1]
+        ix = tf.nn.top_k(sorting_tensor, k=tf.shape(
+            box_to_level)[0]).indices[::-1]
+        ix = tf.gather(box_to_level[:, 2], ix)
+        pooled = tf.gather(pooled, ix)
+
+        # Re-add the batch dimension
+        shape = tf.concat([tf.shape(boxes)[:2], tf.shape(pooled)[1:]], axis=0)
+        pooled = tf.reshape(pooled, shape)
+        return pooled
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0][:2] + self.pool_shape + (input_shape[2][-1], )
