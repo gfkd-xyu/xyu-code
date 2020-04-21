@@ -203,28 +203,32 @@ class MyModel2(tf.keras.Model):
         #self.vgg = self.load_vgg()
         #self.gap = tf.keras.layers.GlobalAveragePooling2D()
         self.pool_size = (7, 7)
-        self.neck = fpn.FPN(name='fpn')
-        self.roi_align = roi_align.PyramidROIAlign(
+        self.neck = [fpn.FPN(name='fpn')]*14
+        self.roi_align = [roi_align.PyramidROIAlign(
             pool_shape=self.pool_size,
-            name='pyramid_roi_align')
+            name='pyramid_roi_align')]*14
         #self.backbone = resnet.ResNet(depth=101, name='res_net')
         self.classes = classes
         self.epoch = 0
+        self.pre_trained = pre_trained 
         self.dense0 =layers.Dense(4096, activation='relu', name='fc1')
         self.dense1 =layers.Dense(100, activation='relu', name='fc2')
         #self.xception = tf.keras.applications.Xception(include_top=False, weights='imagenet') 
         #self.inception = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
-        if pre_trained == "resnet":
-            self.pre_model = tf.keras.applications.ResNet50(include_top=False, weights='imagenet')
-        elif pre_trained == "vgg":
-            self.pre_model = tf.keras.applications.VGG19(include_top=False, weights='imagenet')
-        elif pre_trained == "xception":
-            self.pre_model = tf.keras.applications.Xception(include_top=False, weights='imagenet')
-        elif pre_trained == "inception":
-            self.pre_model = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
+        if self.pre_trained == "resnet":
+            self.pre_model = [tf.keras.applications.ResNet50(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "vgg":
+            self.pre_model = [tf.keras.applications.VGG19(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "xception":
+            self.pre_model = [tf.keras.applications.Xception(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "inception":
+            self.pre_model = [tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "mobile":
+            self.pre_model = [tf.keras.applications.MobileNet(input_shape=(Config.IMAGE_DIM,Config.IMAGE_DIM,3), include_top=False,weights='imagenet')]*14
+
         self.dense = tf.keras.layers.Dense(classes, activation='sigmoid')
         self.keras_model = self.build()
-        #self.resnet = resnet_graph("resnet50",stage5=True)
+        #self.resnet = resnet_graph("resnet50",stage5=True)J
     
     def build(self):
         #x = self.conv0(inputs)
@@ -235,9 +239,9 @@ class MyModel2(tf.keras.Model):
         #x = self.act1(x)
         #x = self.mpl1(x)
         #x = self.load_resnet(x)
-        img_input = layers.Input(shape=(14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3))
-        attr_input = layers.Input(shape=(18,))
-        anno_input = layers.Input(shape=(14,))
+        img_input = layers.Input(shape=(14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3),name="input_1")
+        attr_input = layers.Input(shape=(18,),name="input_2")
+        anno_input = layers.Input(shape=(14,4,4),name="input_3")
         #x = self.vgg(inputs)
         #x = self.gap(x)
         #x = self.flt(x)
@@ -253,62 +257,63 @@ class MyModel2(tf.keras.Model):
         feature.append(attr_input)
         for i in range(14):
             print(img_input[:,i,:,:,:].shape)
-            x = self.pre_model(img_input[:,i,:,:,:])
-            C2 = self.pre_model.get_layer('block2_pool').output
-            C3 = self.pre_model.get_layer('block3_pool').output
-            C4 = self.pre_model.get_layer('block4_pool').output
-            C5 = self.pre_model.get_layer('block5_pool').output
-            P2, P3, P4, P5, _ = self.neck([C2, C3, C4, C5], 
+            x = self.pre_model[i](img_input[:,i,:,:,:])
+            C2 = self.pre_model[i].get_layer('conv_pw_3_relu').output
+            C3 = self.pre_model[i].get_layer('conv_pw_5_relu').output
+            C4 = self.pre_model[i].get_layer('conv_pw_7_relu').output
+            C5 = self.pre_model[i].get_layer('conv_pw_13_relu').output
+            P2, P3, P4, P5, _ = self.neck[i]([C2, C3, C4, C5], 
                                        training=True)
-            rcnn_feature_maps = [P2, P3, P4, P5]
+            feature_maps = [P2, P3, P4, P5]
+            print(P2.shape)
             #pooled_rois_list: list of [num_rois, pooled_height, pooled_width, channels].
             #    The width and height are those specific in the pool_shape in the layer
             #    constructor.
-            pooled_rois_list = self.roi_align((anno_input[:,i], rcnn_feature_maps), training=True)
-            num_pooled_rois_list = [pooled_rois.shape[0] for pooled_rois in pooled_rois_list]
-            pooled_rois = tf.concat(pooled_rois_list, axis=0)
-        
-            y = layers.Conv2D(1024, self.pool_size, activation='relu',
-                                padding='valid')(pooled_rois)
-            y = layers.Conv2D(1024, (1, 1), activation='relu')(y)
-            y = layers.Dense(1024, activation='relu')(y)
-            x = layers.Flatten()(x)
-            x = layers.Dense(4096, activation='relu')(x)
-            x = layers.Dropout(0.5)(x)
-            x = layers.Dense(1024, activation='relu')(x)
-            x = layers.Dropout(0.5)(x)
-            x = layers.concatenate([x,y])
-            x = layers.Dense(2, activation='sigmoid')(x)
+            print(anno_input[:,i,:,:].shape)
+            y = self.roi_align[i]((anno_input[:,i,:,:], feature_maps), training=True)
+            y = layers.TimeDistributed(layers.Conv2D(1024, self.pool_size, padding="valid", activation='relu'),
+                    name="{}_class_conv1".format(i))(y)
+            #print("x", x.shape)
+
+            y = layers.TimeDistributed(layers.Conv2D(1024, (1, 1), activation='relu'),
+                    name="{}_class_conv2".format(i))(y)
+
+            y = layers.Lambda(lambda t: backend.squeeze(backend.squeeze(t, 3), 2),
+                    name="{}_pool_squeeze".format(i))(y)
+
+            y = layers.TimeDistributed(layers.Dense(1024, activation='relu'),name="{}_fc1".format(i))(y)
+            print(y.shape)
+            s = backend.int_shape(y)
+            y = layers.Reshape((s[1]*s[2],),name="{}_reshape".format(i))(y)
+            #y = layers.Lambda(lambda t:tf.reshape(t, [tf.shape(t)[0],-1]),name="{}_reshape".format(i))(y)
+            y = layers.Dense(1024, activation='relu', name="{}_fc2".format(i))(y)
+            x = layers.GlobalAveragePooling2D(name="{}_gap".format(i))(x)
+            #x = layers.Dense(2048, activation='relu', name="{}_fc3".format(i))(x)
+            #x = layers.Dropout(0.5, name="{}_dp1".format(i))(x)
+            x = layers.Dense(1024, activation='relu', name="{}_fc4".format(i))(x)
+            x = layers.Dropout(0.5, name="{}_dp2".format(i))(x)
+            
+            x = layers.concatenate([x,y], name="{}_ccn".format(i))
+            x = layers.Dense(100, activation='sigmoid', name="{}_fc5".format(i))(x)
             print(x.shape)
             feature.append(x)
+        
         x = layers.concatenate(feature)
         print(x.shape)
         #x = layers.Dense(23, activation='relu')(x)
-        x = layers.Dense(10, activation='relu')(x)
+        x = layers.Dense(256, activation='relu')(x)
         x = layers.Dense(self.classes, activation='softmax')(x)
 
-        inputs = [img_input, attr_input, anno_input]
-        model = tf.keras.Model(inputs, x, name='aorta_model')
+        inputss = [img_input, attr_input, anno_input]
+        model = tf.keras.Model(inputs=inputss, outputs=x, name='aorta_model')
 
         return model
    
-    def load_vgg(self):
-        vgg = tf.keras.applications.VGG19(include_top=False, weights='imagenet', 
-                input_tensor=tf.keras.Input(shape=(Config.IMAGE_DIM, Config.IMAGE_DIM, 3)))
-        #vgg.trainable = True
-        return vgg
-
-
-    def load_resnet(self):
-        resnet50 = tf.keras.applications.ResNet50(
-            include_top=False, weights='imagenet', input_tensor=tf.keras.Input(shape=(Config.IMAGE_DIM, Config.IMAGE_DIM, 3)))
-        #resnet50.trainable = True
-        return resnet50
 
     def train(self, train_dataset, epochs, val_dataset, trainable=False):
         now = datetime.datetime.now()
         model_dir = os.path.join('/backup/home/yuxin/Mask_RCNN/aortaPy/weights','aorta')
-        log_dir = os.path.join(model_dir, "{:%Y%m%dT%H%M}".format(now))
+        log_dir = os.path.join(model_dir, "{:%Y%m%dT%H%M}_{}".format(now, self.pre_trained))
         checkpoint_path = os.path.join(log_dir, "aorta_*epoch*.h5")
         checkpoint_path = checkpoint_path.replace("*epoch*", "{epoch:04d}")
 
@@ -353,19 +358,22 @@ class MyModel1(tf.keras.Model):
         #self.gap = tf.keras.layers.GlobalAveragePooling2D()
         self.classes = classes
         self.epoch = 0
+        self.pre_trained = pre_trained
         self.flt = tf.keras.layers.Flatten()
         self.dense0 =tf.keras.layers.Dense(4096, activation='relu', name='fc1')
         self.dense1 =tf.keras.layers.Dense(100, activation='relu', name='fc2')
         #self.xception = tf.keras.applications.Xception(include_top=False, weights='imagenet') 
         #self.inception = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
-        if pre_trained == "resnet":
-            self.pre_model = tf.keras.applications.ResNet50(include_top=False, weights='imagenet')
-        elif pre_trained == "vgg":
-            self.pre_model = tf.keras.applications.VGG19(include_top=False, weights='imagenet')
-        elif pre_trained == "xception":
-            self.pre_model = tf.keras.applications.Xception(include_top=False, weights='imagenet')
-        elif pre_trained == "inception":
-            self.pre_model = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
+        if self.pre_trained == "resnet":
+            self.pre_model = [tf.keras.applications.ResNet50(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "vgg":
+            self.pre_model = [tf.keras.applications.VGG19(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "xception":
+            self.pre_model = [tf.keras.applications.Xception(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "inception":
+            self.pre_model = [tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "mobile":
+            self.pre_model = [tf.keras.applications.MobileNet(include_top=False,weights='imagenet')]*14
         self.dense = tf.keras.layers.Dense(classes, activation='sigmoid')
         self.keras_model = self.build()
         #self.resnet = resnet_graph("resnet50",stage5=True)
@@ -379,8 +387,8 @@ class MyModel1(tf.keras.Model):
         #x = self.act1(x)
         #x = self.mpl1(x)
         #x = self.load_resnet(x)
-        img_input = layers.Input(shape=(14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3))
-        attr_input = layers.Input(shape=(18,))
+        input_1 = layers.Input(name='input_1',shape=(14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3))
+        input_2 = layers.Input(name='input_2',shape=(18,))
         #x = self.vgg(inputs)
         #x = self.gap(x)
         #x = self.flt(x)
@@ -393,25 +401,25 @@ class MyModel1(tf.keras.Model):
         #return model
         #attr_x = layers.Reshape(18,)(attr_input)
         feature = []
-        feature.append(attr_input)
+        feature.append(input_2)
         for i in range(14):
-            print(img_input[:,i,:,:,:].shape)
-            x = self.pre_model(img_input[:,i,:,:,:])
-            x = layers.Flatten()(x)
-            x = layers.Dense(1000, activation='relu')(x)
+            print(input_1[:,i,:,:,:].shape)
+            x = self.pre_model[i](input_1[:,i,:,:,:])
+            x = layers.GlobalAveragePooling2D(name="{}_gap".format(i))(x)
+            x = layers.Dense(512, activation='relu',name="{}_fc1".format(i))(x)
             x = layers.Dropout(0.5)(x)
-            x = layers.Dense(100, activation='relu')(x)
-            x = layers.Dropout(0.5)(x)
-            x = layers.Dense(1, activation='sigmoid')(x)
+            #x = layers.Dense(100, activation='relu',name="{}_fc2".format(i))(x)
+            #x = layers.Dropout(0.5)(x)
+            x = layers.Dense(2, activation='sigmoid',name="{}_fc3".format(i))(x)
             feature.append(x)
         x = layers.concatenate(feature)
         print(x.shape)
-        x = layers.Dense(23, activation='relu')(x)
-        x = layers.Dense(10, activation='relu')(x)
+        x = layers.Dense(40, activation='relu')(x)
+        #x = layers.Dense(10, activation='relu')(x)
         x = layers.Dense(self.classes, activation='softmax')(x)
 
-        inputs = [img_input, attr_input]
-        model = tf.keras.Model(inputs, x, name='aorta_model')
+        inputss = [input_1, input_2]
+        model = tf.keras.Model(inputs=inputss, outputs=x, name='aorta_model')
 
         return model
    
@@ -431,7 +439,7 @@ class MyModel1(tf.keras.Model):
     def train(self, train_dataset, epochs, val_dataset, trainable=False):
         now = datetime.datetime.now()
         model_dir = os.path.join('/backup/home/yuxin/Mask_RCNN/aortaPy/weights','aorta')
-        log_dir = os.path.join(model_dir, "{:%Y%m%dT%H%M}".format(now))
+        log_dir = os.path.join(model_dir, "{:%Y%m%dT%H%M}_{}".format(now, self.pre_trained))
         checkpoint_path = os.path.join(log_dir, "aorta_*epoch*.h5")
         checkpoint_path = checkpoint_path.replace("*epoch*", "{epoch:04d}")
 
