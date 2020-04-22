@@ -466,7 +466,7 @@ class MyModel2(tf.keras.Model):
         elif self.pre_trained == "inception":
             self.pre_model = [tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')]*14
         elif self.pre_trained == "mobile":
-            self.pre_model = [tf.keras.applications.MobileNet(input_shape=(Config.IMAGE_DIM,Config.IMAGE_DIM,3), include_top=False,weights='imagenet')]*14
+            self.pre_model = [tf.keras.applications.MobileNet(include_top=False,weights='imagenet')]*14
 
         self.dense = tf.keras.layers.Dense(classes, activation='sigmoid')
         self.keras_model = self.build()
@@ -499,15 +499,30 @@ class MyModel2(tf.keras.Model):
         feature.append(attr_input)
         for i in range(14):
             print(img_input[:,i,:,:,:].shape)
-            x = self.pre_model[i](img_input[:,i,:,:,:])
-            C2 = self.pre_model[i].get_layer('conv_pw_3_relu').output
-            C3 = self.pre_model[i].get_layer('conv_pw_5_relu').output
-            C4 = self.pre_model[i].get_layer('conv_pw_7_relu').output
-            C5 = self.pre_model[i].get_layer('conv_pw_13_relu').output
+            x = self.pre_model[i].layers[1](img_input[:,i,:,:,:])
+            #print(x.shape)
+            for l in self.pre_model[i].layers[2:]:
+                if l.name == "conv_pw_3_relu":
+                    C2 = x = l(x)
+                elif l.name == "conv_pw_5_relu": 
+                    C3 = x = l(x)
+                elif l.name == "conv_pw_7_relu": 
+                    C4 = x = l(x)
+                elif l.name == "conv_pw_13_relu": 
+                    C5 = x = l(x)
+                else:
+                    x = l(x)
+                #print(x.shape)
+            print(C2.shape, C3.shape, C4.shape, C5.shape)
+            #if not tf.math.logical_and(C2,C3,C4,C5): raise ValueError('fpn layers has no value')
+            #C2 = self.pre_model[i].get_layer('conv_pw_3_relu').output
+            #C3 = self.pre_model[i].get_layer('conv_pw_5_relu').output
+            #C4 = self.pre_model[i].get_layer('conv_pw_7_relu').output
+            #C5 = self.pre_model[i].get_layer('conv_pw_13_relu').output
             P2, P3, P4, P5, _ = self.neck[i]([C2, C3, C4, C5], 
                                        training=True)
             feature_maps = [P2, P3, P4, P5]
-            print(P2.shape)
+            #print(P2.shape)
             #pooled_rois_list: list of [num_rois, pooled_height, pooled_width, channels].
             #    The width and height are those specific in the pool_shape in the layer
             #    constructor.
