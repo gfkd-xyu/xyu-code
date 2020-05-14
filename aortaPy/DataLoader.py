@@ -25,6 +25,22 @@ def normalize(img):
         normalized_img = ((img - np.min(img))/(np.max(img) - np.min(img)))*255
         return normalized_img.astype(np.uint8)
 
+def norm_boxes(boxes, shape):
+        """Converts boxes from pixel coordinates to normalized coordinates.
+        boxes: [N, (y1, x1, y2, x2)] in pixel coordinates
+        shape: [..., (height, width)] in pixels        
+        
+        Note: In pixel coordinates (y2, x2) is outside the box. But in normalized
+        coordinates it's inside the box.
+        
+        Returns:
+            [N, (y1, x1, y2, x2)] in normalized coordinates
+        """""
+        h, w = shape
+        scale = np.array([h - 1, w - 1, h - 1, w - 1])
+        shift = np.array([0, 0, 1, 1])
+        return np.divide((boxes - shift), scale).astype(np.float32)
+
 
 class Dataset(object):
     
@@ -96,9 +112,8 @@ class Dataset(object):
         return df
 
    
-    def load_case(self, case_id, csv_path, anno_path, augmentation=None):
+    def load_case(self, case_id, csv_path, augmentation=None):
         case = []
-        case_anno = []
         df = self.handle_case_attributes(csv_path)
         cid, group = case_id.split("_")
         class_id = 1 if group=='event' else 0
@@ -109,38 +124,22 @@ class Dataset(object):
         if augmentation is not None: det = augmentation.to_deterministic()
         #for i in os.listdir(path):
         for i in range(1,15):
-            xml_file = os.path.join(anno_path, str(i), str(class_id), "{}.xml".format(cid))
             #print(xml_file)
-            file = "{}.dcm".format(i)
-            ds = sitk.ReadImage(os.path.join(path,file))
+            filed = "{}.dcm".format(i)
+            ds = sitk.ReadImage(os.path.join(path,filed))
             #print(os.path.join(path,file))
             m = sitk.GetArrayFromImage(ds)[0]
             m = normalize(m)
             m = cv2.resize(m, (Config.IMAGE_DIM, Config.IMAGE_DIM), interpolation=cv2.INTER_AREA)
             if m.ndim != 3:
                 m = sc.gray2rgb(m)
-            tree = ET.parse(xml_file)
-            root = tree.getroot()
-            all_boxes = []
-            for o in root.iter('object'):
-                for b in o.findall('bndbox'):
-                    ymin = int(b.find("ymin").text)
-                    xmin = int(b.find("xmin").text)
-                    ymax = int(b.find("ymax").text)
-                    xmax = int(b.find("xmax").text)
-                    #bbs = [xmin, ymin, xmax, ymax]
-                    bbs =ia.BoundingBox(x1=xmin, y1=ymin, x2=xmax, y2=ymax)
-                    all_boxes.append(bbs)
-            bbs_aug = ia.BoundingBoxesOnImage(all_boxes,shape=m.shape)
             if augmentation is not None: 
                 m = det.augment_image(m)
-                bbs_aug = det.augment_bounding_boxes(bbs_aug)
       
             case.append(m)
-            case_anno.append(bbs_aug)
         #case = np.stack(case,axis=-1)
         #case = np.expand_dims(case,axis=-1)
-        return attr, np.array(case), np.array(case_anno), self.case_info[case_id][1]
+        return attr, np.array(case), self.case_info[case_id][1]
     
     #def prepare(self):
     def load_dataset(self, dataset_dir):
@@ -265,8 +264,9 @@ class Dataset_png(object):
                 n_x2 = bbs_aug.bounding_boxes[j].x2
                 n_y2 = bbs_aug.bounding_boxes[j].y2
                 bboxes[j] = np.array([n_y1, n_x1, n_y2, n_x2])
+            bboxes = norm_boxes(bboxes, m.shape[:2])
             case.append(m)
-            case_anno.append(bboxes.astype(np.int32))
+            case_anno.append(bboxes)
         #case = np.stack(case,axis=-1)
         #case = np.expand_dims(case,axis=-1)
         #print(cont)

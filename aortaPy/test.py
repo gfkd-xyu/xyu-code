@@ -45,7 +45,7 @@ def train_generator():
         yield img, class_id
 def train_gen():
         #assert isinstance(dataset, Dataset), "dadaset is not belong to Dataset class"
-    for i in train_id:
+     for i in train_id:
         attr, case, case_anno, class_id = dataset_train.load_case(i, csv_path, anno_path, augmentation=augment)
         #inputs = [attr, case]
         yield {"input_1": case,"input_2": attr,"input_3":case_anno}, class_id
@@ -72,7 +72,7 @@ train_d = tf.data.Dataset.from_generator(
 val_d = tf.data.Dataset.from_generator(
         val_gen, output_types=({"input_1": tf.float32,"input_2": tf.float32,"input_3": tf.float32}, tf.int8), 
         output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,),
-            "input_3":tf.TensorShape([14,4,4])}, 
+            "input_3":tf.TensorShape([14,4,4])},
             tf.TensorShape([])))
 
 #test_d = tf.data.Dataset.from_generator(
@@ -89,8 +89,8 @@ val_d = val_d.batch(1)
 #test_d = test_d.shuffle(buffer_size=len(dataset_test.case_id))
 #test_d = test_d.batch(1)
 
-    
-model = MyModel2(2, "vgg16")
+model = MyModel2(2, "vgg")
+#model.keras_model.load_weights("/Extended/backup1/yuxin/weights/aorta/20200502T2332_vgg/aorta_0099.h5")
 #model.train(train_d, 20, val_d, trainable=False)
-model.train(train_d, 100, val_d, trainable=True)
+model.test(val_d, "/Extended/backup1/yuxin/weights/aorta/20200502T2332_vgg/aorta_0099.h5")
 #model.summary()

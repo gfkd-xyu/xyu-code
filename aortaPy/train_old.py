@@ -12,13 +12,13 @@ from config import Config
 import datetime
 from imgaug import augmenters as iaa
 
-train_dir = "/backup/yuxin/aortaData/20191108_41/train"
+train_dir = "/backup/yuxin/aortaData/20191108_41对/train"
 #val_dir = "/backup/home/yuxin/aortaData/20191108_41对/val"
-#test_dir = "/backup/home/yuxin/aortaData/20191108_41对/test"
+test_dir = "/backup/yuxin/aortaData/20191108_41对/test"
 csv_path = "/backup/yuxin/aortaData/20191108_41对/df.csv"
 anno_path = "/backup/yuxin/aortaData/label"
 
-dataset_train = DataLoader.Dataset_png()
+dataset_train = DataLoader.Dataset()
 #dataset_test = DataLoader.Dataset()
 #dataset_val = DataLoader.Dataset()
 
@@ -36,26 +36,19 @@ case_ids_sort = sorted(dataset_train.case_id)
 train_id = case_ids_sort[:66]
 val_id = case_ids_sort[66:]
 
-def train_generator():
-    #assert isinstance(dataset, Dataset), "dadaset is not belong to Dataset class"
-    for i in dataset_train.case_id:
-        img, class_id = dataset_train.load_case_image(i, IMG_ID)
-        det = augment.to_deterministic()
-        img = det.augment_image(img)
-        yield img, class_id
 def train_gen():
         #assert isinstance(dataset, Dataset), "dadaset is not belong to Dataset class"
-    for i in train_id:
-        attr, case, case_anno, class_id = dataset_train.load_case(i, csv_path, anno_path, augmentation=augment)
+    for  i in train_id:
+        attr, case, class_id = dataset_train.load_case(i, csv_path, augmentation=augment)
         #inputs = [attr, case]
-        yield {"input_1": case,"input_2": attr,"input_3":case_anno}, class_id
-
+        yield {"input_1": case,"input_2": attr}, class_id
+ 
 def val_gen():
     #assert isinstance(dataset, Dataset), "dadaset is not belong to Dataset class"
     for i in val_id:
-        attr, case, case_anno, class_id = dataset_train.load_case(i, csv_path, anno_path)
+        attr , case, class_id = dataset_train.load_case(i, csv_path, augmentation=augment)
         #inputs = [attr, case]
-        yield {"input_1": case,"input_2": attr,"input_3":case_anno}, class_id
+        yield {"input_1": case,"input_2": attr}, class_id
 
 #def test_gen():
 #    #assert isinstance(dataset, Dataset), "dadaset is not belong to Dataset class"
@@ -64,15 +57,13 @@ def val_gen():
 #        yield {"input_1": case,"input_2": attr}, class_id
 
 train_d = tf.data.Dataset.from_generator(
-        train_gen, output_types=({"input_1": tf.float32,"input_2": tf.float32,"input_3": tf.float32}, tf.int8), 
-        output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,),
-             "input_3":tf.TensorShape([14,4,4])}, 
+           train_gen, output_types=({"input_1": tf.float32,"input_2": tf.float32}, tf.int8), 
+        output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,)}, 
             tf.TensorShape([])))
 
 val_d = tf.data.Dataset.from_generator(
-        val_gen, output_types=({"input_1": tf.float32,"input_2": tf.float32,"input_3": tf.float32}, tf.int8), 
-        output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,),
-            "input_3":tf.TensorShape([14,4,4])}, 
+           val_gen, output_types=({"input_1": tf.float32,"input_2": tf.float32}, tf.int8), 
+        output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,)}, 
             tf.TensorShape([])))
 
 #test_d = tf.data.Dataset.from_generator(
@@ -80,17 +71,17 @@ val_d = tf.data.Dataset.from_generator(
 #        output_shapes=({"input_1": tf.TensorShape([14, Config.IMAGE_DIM, Config.IMAGE_DIM, 3]),"input_2": tf.TensorShape(18,)}, 
 #            tf.TensorShape([])))
 
-#train_d = train_d.shuffle()
+#train_d = train_d.shuffle(buffer_size=len(train_id))
 train_d = train_d.batch(1)
 
-#val_d = val_d.shuffle()
+#val_d = val_d.shuffle(buffer_size=len(val_id))
 val_d = val_d.batch(1)
 
 #test_d = test_d.shuffle(buffer_size=len(dataset_test.case_id))
 #test_d = test_d.batch(1)
 
     
-model = MyModel2(2, "vgg16")
+model = MyModel1(2, "vgg16")
 #model.train(train_d, 20, val_d, trainable=False)
 model.train(train_d, 100, val_d, trainable=True)
 #model.summary()
