@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, backend, Input
 #from tfkerassurgeon import delete_layer, insert_layer
+from sklearn.metrics import confusion_matrix,accuracy_score,f1_score,roc_auc_score,recall_score,precision_score
 
 import numpy as np
 import os 
@@ -431,6 +432,16 @@ def Aorta_Model(img_shape=None, attr_shape=None, pre_trained='resnet', classes=2
 
     return model
 
+def calculate_metric(gt, pred): 
+    confusion = confusion_matrix(gt,pred)
+    TP = confusion[1, 1]
+    TN = confusion[0, 0]
+    FP = confusion[0, 1]
+    FN = confusion[1, 0]
+    acc = (TP+TN)/float(TP+TN+FP+FN)
+    sen = TP / float(TP+FN)
+    spe = TN / float(TN+FP)
+    return acc, sen, spe
 
 class MyModel2(tf.keras.Model):
     def __init__(self, classes, pre_trained):
@@ -459,8 +470,8 @@ class MyModel2(tf.keras.Model):
         #self.inception = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
         if self.pre_trained == "resnet":
             self.pre_model = [tf.keras.applications.ResNet50(include_top=False, weights='imagenet')]*14
-        elif self.pre_trained == "vgg16":
-            self.pre_model = [tf.keras.applications.VGG16(include_top=False, weights='imagenet')]*14
+        elif self.pre_trained == "vgg":
+            self.pre_model = [tf.keras.applications.VGG19(include_top=False, weights='imagenet')]*14
         elif self.pre_trained == "xception":
             self.pre_model = [tf.keras.applications.Xception(include_top=False, weights='imagenet')]*14
         elif self.pre_trained == "inception":
@@ -597,10 +608,11 @@ class MyModel2(tf.keras.Model):
         self.keras_model.load_weights(weights_path)
         self.keras_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
                 loss="sparse_categorical_crossentropy",
-                metrics=['accuracy'])
+                metrics=[])
 
-        loss, accuracy = self.keras_model.evaluate(val_dataset)
-        return loss, accuracy
+        lo = self.keras_model.predict(val_dataset)
+        index = np.argmax(lo, axis=1)
+        return index
 
 
 
@@ -720,6 +732,17 @@ class MyModel1(tf.keras.Model):
                 use_multiprocessing=True
                 )
         self.epoch = max(self.epoch, epochs)
+
+    def test(self, val_dataset, weights_path):
+        self.keras_model.load_weights(weights_path)
+        self.keras_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                loss="sparse_categorical_crossentropy",
+                metrics=["accuracy"])
+
+        lo = self.keras_model.predict(val_dataset)
+        index = np.argmax(lo, axis=1)
+        return index
+
 
 def log(text, array=None):
     """Prints a text message. And, optionally, if a Numpy array is provided it

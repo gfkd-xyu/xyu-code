@@ -32,20 +32,31 @@ class PyramidROIAlign(tf.keras.layers.Layer):
 
     def call(self, inputs):
         # Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
-        boxes = inputs[0]
-
+        boxes, feature_maps = inputs
+        #print(boxes.shape) 
+ 
+        #inidex = tf.where(tf.not_equal(boxes[:,:,0],0))
+        #boxes = tf.gather_nd(boxes, index)
+    
+        #boxes = tf.gather_nd(boxes, ix)
+        #h = tf.gather_nd(h,ix)
+        #w = tf.gather_nd(w,ix)
+        #print(boxes.shape)
+       
         # Image meta
         # Holds details about the image. See compose_image_meta()
         #image_meta = inputs[1]
 
         # Feature Maps. List of feature maps from different level of the
         # feature pyramid. Each is [batch, height, width, channels]
-        feature_maps = inputs[1:]
-
+        #feature_maps = inputs[1:]
+        #print(feature_maps[0])
         # Assign each ROI to a level in the pyramid based on the ROI area.
         y1, x1, y2, x2 = tf.split(boxes, 4, axis=2)
         h = y2 - y1
         w = x2 - x1
+        #print(tf.sqrt(h*w).shape)
+
         # Use shape of first image. Images in a batch must have the same size.
         #image_shape = parse_image_meta_graph(image_meta)['image_shape'][0]
         # Equation 1 in the Feature Pyramid Networks paper. Account for
@@ -57,6 +68,7 @@ class PyramidROIAlign(tf.keras.layers.Layer):
             2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
 
+        #print(roi_level)
         # Loop through levels and apply ROI pooling to each. P2 to P5.
         pooled = []
         box_to_level = []
